@@ -1,6 +1,15 @@
 %{
-  
+int yylex();
+void yyerror(const char *s);
 %}
+
+%union {
+  char error_char;
+  int int_value;
+  const char *ident_name;
+}
+
+%token <error_char> SP_LEX_ERROR
 
 %token K_CONST
 %token K_INT
@@ -32,7 +41,7 @@
 
 %token OP_SEMICOLON   /*  ;  */
 %token OP_COMMA   /*  ,  */
-%token OP_EQUAL   /*  =  */
+%token OP_ASSIGN   /*  =  */
 
 %token OP_LBRACKET   /*  [  */
 %token OP_RBRACKET   /*  ]  */
@@ -79,7 +88,7 @@ ConstDefList
 
 /* ConstDef ::= IDENT {"[" ConstExp "]"} "=" ConstInitVal; */
 ConstDef
-: IDENT DefArrayDimensions OP_EQUAL ConstInitVal {}
+: IDENT DefArrayDimensions OP_ASSIGN ConstInitVal {}
 ;
 
 DefArrayDimensions
@@ -111,7 +120,7 @@ VarDefList
 /* VarDef ::= IDENT {"[" ConstExp "]"} ["=" InitVal] */
 VarDef
 : IDENT DefArrayDimensions {}
-| IDENT DefArrayDimensions OP_EQUAL InitVal {}
+| IDENT DefArrayDimensions OP_ASSIGN InitVal {}
 ;
 
 /* InitVal ::= Exp | "{" [InitVal {"," InitVal}] "}"; */
@@ -173,7 +182,7 @@ BlockItem
 /*        | "return" [Exp] ";"; */
 Stmt
 : OP_SEMICOLON {}
-| LVal OP_EQUAL Exp OP_SEMICOLON {}
+| LVal OP_ASSIGN Exp OP_SEMICOLON {}
 | Exp OP_SEMICOLON {}
 | Block {}
 | K_IF OP_LPAREN Exp OP_RPAREN Stmt {}

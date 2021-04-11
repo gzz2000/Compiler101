@@ -12,8 +12,12 @@ project(compiler101)
 find_package(BISON)
 find_package(FLEX)
 
-# flex_target(sysy_parser sysy.l)
 bison_target(sysy_parser sysy.y ${CMAKE_CURRENT_BINARY_DIR}/sysy.tab.c
   DEFINES_FILE ${CMAKE_CURRENT_BINARY_DIR}/sysy.tab.h
   COMPILE_FLAGS -Wcounterexamples)
-add_executable(sysy_test ${BISON_sysy_parser_OUTPUTS})
+
+flex_target(sysy_lexer sysy.l ${CMAKE_CURRENT_BINARY_DIR}/sysy.lex.c)
+
+add_flex_bison_dependency(sysy_lexer sysy_parser)
+
+add_executable(sysy_test ${BISON_sysy_parser_OUTPUTS} ${FLEX_sysy_lexer_OUTPUTS})
