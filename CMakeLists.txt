@@ -12,12 +12,12 @@ project(compiler101)
 find_package(BISON)
 find_package(FLEX)
 
-bison_target(sysy_parser sysy.y ${CMAKE_CURRENT_BINARY_DIR}/sysy.tab.c
+bison_target(sysy_parser sysy.y ${CMAKE_CURRENT_BINARY_DIR}/sysy.tab.cpp
   DEFINES_FILE ${CMAKE_CURRENT_BINARY_DIR}/sysy.tab.h
   COMPILE_FLAGS -Wcounterexamples)
 
-flex_target(sysy_lexer sysy.l ${CMAKE_CURRENT_BINARY_DIR}/sysy.lex.c)
+flex_target(sysy_lexer sysy.l ${CMAKE_CURRENT_BINARY_DIR}/sysy.lex.cpp)
 
 add_flex_bison_dependency(sysy_lexer sysy_parser)
 
-add_executable(sysy_test ${BISON_sysy_parser_OUTPUTS} ${FLEX_sysy_lexer_OUTPUTS})
+add_executable(sysy_test ${BISON_sysy_parser_OUTPUTS} ${FLEX_sysy_lexer_OUTPUTS} bridge.cpp)
