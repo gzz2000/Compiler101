@@ -129,7 +129,7 @@ ConstDef
   $$ = make_shared<ast_constdef>(
     std::move(dcast<ast_term_ident>($1)->name),
     std::move(dcast<ast_defarraydimensions>($2)->dims),
-    std::move(dcast<ast_constinitval>($4)));
+    dcast<ast_constinitval>($4));
  }
 ;
 
@@ -138,9 +138,9 @@ DefArrayDimensions
   $$ = make_shared<ast_defarraydimensions>();
  }
 | DefArrayDimensions OP_LBRACKET ConstExp OP_RBRACKET {
-  $$ = std::move($2);
+  $$ = std::move($1);
   dcast<ast_defarraydimensions>($$)->dims.push_back(
-    dcast<ast_constexp>($2));
+    dcast<ast_constexp>($3));
  }
 ;
 
@@ -149,7 +149,7 @@ ConstInitVal
 : ConstExp {
   auto r = make_shared<ast_constinitval>();
   r->content.emplace<std::shared_ptr<ast_constexp>>(
-    std::move(dcast<ast_constexp>($1)));
+    dcast<ast_constexp>($1));
   $$ = r;
  }
 | OP_LBRACE ConstInitValList OP_RBRACE {
@@ -203,7 +203,7 @@ VarDef
   $$ = make_shared<ast_def>(
     std::move(dcast<ast_term_ident>($1)->name),
     std::move(dcast<ast_defarraydimensions>($2)->dims),
-    std::move(dcast<ast_initval>($3)));
+    dcast<ast_initval>($3));
  }
 ;
 
@@ -219,7 +219,7 @@ InitVal
 : Exp {
   auto r = make_shared<ast_initval>();
   r->content.emplace<std::shared_ptr<ast_exp>>(
-    std::move(dcast<ast_exp>($1)));
+    dcast<ast_exp>($1));
   $$ = r;
  }
 | OP_LBRACE InitValList OP_RBRACE {
@@ -250,7 +250,7 @@ FuncDef
     dcast<ast_term_generic>($1)->type,
     std::move(dcast<ast_term_ident>($2)->name),
     std::move(dcast<ast_funcfparams>($4)->params),
-    std::move(dcast<ast_block>($6)));
+    dcast<ast_block>($6));
  }
 ;
 
@@ -363,7 +363,14 @@ Stmt
 | K_IF OP_LPAREN Exp OP_RPAREN Stmt {
   $$ = make_shared<ast_stmt_if>(
     dcast<ast_exp>($3),
-    dcast<ast_stmt>($5));
+    dcast<ast_stmt>($5),
+    nullptr);
+ }
+| K_IF OP_LPAREN Exp OP_RPAREN Stmt K_ELSE Stmt {
+  $$ = make_shared<ast_stmt_if>(
+    dcast<ast_exp>($3),
+    dcast<ast_stmt>($5),
+    dcast<ast_stmt>($7));
  }
 | K_WHILE OP_LPAREN Exp OP_RPAREN Stmt {
   $$ = make_shared<ast_stmt_while>(
@@ -478,7 +485,9 @@ MulExp
 
 UnaryExp
 : TerminalExp {
-  $$ = std::move($1);
+  auto r = make_shared<ast_exp>();
+  r->rpn.push_back(dcast<ast_exp_term>($1));
+  $$ = r;
  }
 | OP_ADD UnaryExp {
   concat_rpn1($$, $2, OP_ADD);

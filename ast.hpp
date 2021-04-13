@@ -158,8 +158,9 @@ struct ast_stmt_subblock: ast_stmt {
 struct ast_stmt_if: ast_stmt {
   std::shared_ptr<ast_exp> cond;
   std::shared_ptr<ast_stmt> exec;
+  std::shared_ptr<ast_stmt> exec_else;
 
-  inline ast_stmt_if(std::shared_ptr<ast_exp> _cond, std::shared_ptr<ast_stmt> _exec): cond(_cond), exec(_exec) {}
+  inline ast_stmt_if(std::shared_ptr<ast_exp> _cond, std::shared_ptr<ast_stmt> _exec, std::shared_ptr<ast_stmt> _exec_else): cond(_cond), exec(_exec), exec_else(_exec_else) {}
 };
 
 struct ast_stmt_while: ast_stmt {
