@@ -329,7 +329,7 @@ BlockItems
   }
   $$ = r;
  }
-| BlockItems Stmt {
+| BlockItems OpenStmt {
   $$ = std::move($1);
   if($2) {
     dcast<ast_block>($$)->items.emplace_back(dcast<ast_stmt>($2));
@@ -345,6 +345,17 @@ BlockItems
 /*        | "break" ";" */
 /*        | "continue" ";" */
 /*        | "return" [Exp] ";"; */
+OpenStmt
+: Stmt {
+  $$ = std::move($1);
+ }
+| K_IF OP_LPAREN Exp OP_RPAREN OpenStmt {
+  $$ = make_shared<ast_stmt_if>(
+    dcast<ast_exp>($3),
+    dcast<ast_stmt>($5),
+    nullptr);
+ }
+
 Stmt
 : OP_SEMICOLON {}
 | LVal OP_ASSIGN Exp OP_SEMICOLON {
@@ -360,13 +371,7 @@ Stmt
   $$ = make_shared<ast_stmt_subblock>(
     dcast<ast_block>($1));
  }
-| K_IF OP_LPAREN Exp OP_RPAREN Stmt {
-  $$ = make_shared<ast_stmt_if>(
-    dcast<ast_exp>($3),
-    dcast<ast_stmt>($5),
-    nullptr);
- }
-| K_IF OP_LPAREN Exp OP_RPAREN Stmt K_ELSE Stmt {
+| K_IF OP_LPAREN Exp OP_RPAREN Stmt K_ELSE OpenStmt {
   $$ = make_shared<ast_stmt_if>(
     dcast<ast_exp>($3),
     dcast<ast_stmt>($5),
