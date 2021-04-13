@@ -1,5 +1,5 @@
 %{
-#include "ast.hpp"
+#include "sysy.hpp"
 
 int yylex();
 void yyerror(const char *s);

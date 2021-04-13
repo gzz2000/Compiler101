@@ -1,5 +1,5 @@
 #include <cstdio>
-#include "ast.hpp"
+#include "sysy.hpp"
 
 extern std::shared_ptr<ast_nodebase> yyparse(void);
 extern FILE *yyin;

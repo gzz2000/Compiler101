@@ -28,4 +28,4 @@ flex_target(sysy_lexer sysy.l ${CMAKE_CURRENT_BINARY_DIR}/sysy.lex.cpp)
 
 add_flex_bison_dependency(sysy_lexer sysy_parser)
 
-add_executable(sysy_test ${BISON_sysy_parser_OUTPUTS} ${FLEX_sysy_lexer_OUTPUTS} bridge.cpp)
+add_executable(sysy_test ${BISON_sysy_parser_OUTPUTS} ${FLEX_sysy_lexer_OUTPUTS} sysy_bridge.cpp)

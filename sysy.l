@@ -1,7 +1,7 @@
 %option noyywrap
 
 %{
-#include "ast.hpp"
+#include "sysy.hpp"
 #define YYSTYPE std::shared_ptr<ast_nodebase>
 
 #include "sysy.tab.h"
