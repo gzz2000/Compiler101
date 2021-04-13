@@ -1,6 +1,9 @@
 %option noyywrap
 
 %{
+#include "ast.hpp"
+#define YYSTYPE std::shared_ptr<ast_nodebase>
+
 #include "sysy.tab.h"
 %}
 
@@ -21,38 +24,41 @@
 
 [1-9][0-9]* {
   /* decimal */
-  yylval.int_value = 0;
+  int int_value = 0;
   for(int i = 0; yytext[i]; ++i) {
-    yylval.int_value = yylval.int_value * 10 + yytext[i] - '0';
+    int_value = int_value * 10 + yytext[i] - '0';
   }
+  yylval = std::make_shared<ast_term_int>(int_value);
   return INT_LITERAL;
 }
 
 0[0-7]* {
   /* octal, or zero */
-  yylval.int_value = 0;
+  int int_value = 0;
   for(int i = 1; yytext[i]; ++i) {
-    yylval.int_value = yylval.int_value * 8 + yytext[i] - '0';
+    int_value = int_value * 8 + yytext[i] - '0';
   }
+  yylval = std::make_shared<ast_term_int>(int_value);
   return INT_LITERAL;
 }
 
 0[xX][0-9a-fA-F]+ {
   /* hex */
-  yylval.int_value = 0;
+  int int_value = 0;
   for(int i = 2; yytext[i]; ++i) {
     int c = yytext[i];
     if(c >= '0' && c <= '9') c = c - '0';
     else if(c >= 'a' && c <= 'f') c = c - 'a' + 10;
     else c = c - 'A' + 10;
-    yylval.int_value = yylval.int_value * 16 + c;
+    int_value = int_value * 16 + c;
   }
+  yylval = std::make_shared<ast_term_int>(int_value);
   return INT_LITERAL;
 }
 
  /* identifier */
 [_a-zA-Z][0-9_a-zA-Z]* {
-  yylval.ident_name = yytext;
+  yylval = std::make_shared<ast_term_ident>(yytext);
   return IDENT;
 }
 
@@ -92,7 +98,7 @@
 
  /* invalid chars */
 . {
-  yylval.error_char = yytext[0];
+  /* yylval.error_char = yytext[0]; */
   return SP_LEX_ERROR;
 }
 

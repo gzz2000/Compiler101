@@ -1,15 +1,26 @@
 %{
+#include "ast.hpp"
+
 int yylex();
 void yyerror(const char *s);
+
+using std::make_shared;
+
+#define YYSTYPE std::shared_ptr<ast_nodebase>
+
+#define concat_rpn2(ret, a, b, op) {             \
+    auto r = dcast<ast_exp>(a);                  \
+    append_move(r->rpn, dcast<ast_exp>(b)->rpn); \
+    r->rpn.emplace_back(std::make_pair(op, 2));  \
+    ret = r;                                     \
+  }
+#define concat_rpn1(ret, a, op) {                                 \
+    ret = a;                                                      \
+    dcast<ast_exp>(ret)->rpn.emplace_back(std::make_pair(op, 1)); \
+  }
 %}
 
-%union {
-  char error_char;
-  int int_value;
-  const char *ident_name;
-}
-
-%token <error_char> SP_LEX_ERROR
+%token SP_LEX_ERROR
 
 %token K_CONST
 %token K_INT
@@ -21,8 +32,8 @@ void yyerror(const char *s);
 %token K_CONTINUE
 %token K_RETURN
 
-%token <int_value> INT_LITERAL
-%token <ident_name> IDENT
+%token INT_LITERAL
+%token IDENT
 
 %token OP_ADD   /*  +  */
 %token OP_SUB   /*  -  */
@@ -55,121 +66,275 @@ void yyerror(const char *s);
 %%
 
 /* CompUnit ::= [CompUnit] (Decl | FuncDef); */
-CompUnit
-: {}
-| CompUnit DeclOrFuncDef {}
-;
-
-DeclOrFuncDef
-: Decl {}
-| FuncDef {}
-;
-
 /* Decl ::= ConstDecl | VarDecl; */
-Decl
-: ConstDecl {}
-| VarDecl {}
+CompUnit
+: {
+  $$ = make_shared<ast_compunit>();
+ }
+| CompUnit ConstDecl {
+  $$ = std::move($1);
+  append_move(
+    dcast<ast_compunit>($$)->constdefs,
+    dcast<ast_constdecl>($2)->constdefs);
+ }
+| CompUnit VarDecl {
+  $$ = std::move($1);
+  append_move(
+    dcast<ast_compunit>($$)->defs,
+    dcast<ast_decl>($2)->defs);
+ }
+| CompUnit FuncDef {
+  $$ = std::move($1);
+  dcast<ast_compunit>($$)->funcdefs.push_back(
+    dcast<ast_funcdef>($2));
+ }
 ;
 
 /* ConstDecl ::= "const" BType ConstDef {"," ConstDef} ";"; */
 ConstDecl
-: K_CONST Types ConstDefList OP_SEMICOLON {}
+: K_CONST Types ConstDefList OP_SEMICOLON {
+  if(dcast<ast_term_generic>($2)->type == K_VOID) {
+    yyerror("Definition cannot be void");
+  }
+  else {
+    $$ = std::move($3);
+  }
+ }
 ;
 
 Types
-: K_INT {}
-| K_VOID {}
+: K_INT {
+  $$ = make_shared<ast_term_generic>(K_INT);
+ }
+| K_VOID {
+  $$ = make_shared<ast_term_generic>(K_VOID);
+ }
 ;
 
 ConstDefList
-: ConstDef {}
-| ConstDefList OP_COMMA ConstDef {}
+: ConstDef {
+  auto r = make_shared<ast_constdecl>();
+  r->constdefs.push_back(dcast<ast_constdef>($1));
+  $$ = r;
+ }
+| ConstDefList OP_COMMA ConstDef {
+  $$ = std::move($1);
+  dcast<ast_constdecl>($$)->constdefs.push_back(dcast<ast_constdef>($3));
+ }
 ;
 
 /* ConstDef ::= IDENT {"[" ConstExp "]"} "=" ConstInitVal; */
 ConstDef
-: IDENT DefArrayDimensions OP_ASSIGN ConstInitVal {}
+: IDENT DefArrayDimensions OP_ASSIGN ConstInitVal {
+  $$ = make_shared<ast_constdef>(
+    std::move(dcast<ast_term_ident>($1)->name),
+    std::move(dcast<ast_defarraydimensions>($2)->dims),
+    std::move(dcast<ast_constinitval>($4)));
+ }
 ;
 
 DefArrayDimensions
-: {} /* epsilon */
-| OP_LBRACKET ConstExp OP_RBRACKET {}
+: {
+  $$ = make_shared<ast_defarraydimensions>();
+ }
+| DefArrayDimensions OP_LBRACKET ConstExp OP_RBRACKET {
+  $$ = std::move($2);
+  dcast<ast_defarraydimensions>($$)->dims.push_back(
+    dcast<ast_constexp>($2));
+ }
 ;
 
 /* ConstInitVal ::= ConstExp | "{" [ConstInitVal {"," ConstInitVal}] "}"; */
 ConstInitVal
-: ConstExp {}
-| OP_LBRACE ConstInitValList OP_RBRACE {}
+: ConstExp {
+  auto r = make_shared<ast_constinitval>();
+  r->content.emplace<std::shared_ptr<ast_constexp>>(
+    std::move(dcast<ast_constexp>($1)));
+  $$ = r;
+ }
+| OP_LBRACE ConstInitValList OP_RBRACE {
+  auto r = make_shared<ast_constinitval>();
+  r->content.emplace<std::vector<std::shared_ptr<ast_constinitval>>>(
+    std::move(dcast<ast_constinitvallist>($2)->list));
+  $$ = r;
+ }
 ;
 
 ConstInitValList
-: ConstInitVal {}
-| ConstInitValList OP_COMMA ConstInitVal {}
+: ConstInitVal {
+  auto r = make_shared<ast_constinitvallist>();
+  r->list.push_back(dcast<ast_constinitval>($1));
+  $$ = r;
+ }
+| ConstInitValList OP_COMMA ConstInitVal {
+  $$ = std::move($1);
+  dcast<ast_constinitvallist>($$)->list.push_back(
+    dcast<ast_constinitval>($3));
+ }
 ;
 
 /* VarDecl ::= BType VarDef {"," VarDef} ";" */
 VarDecl
-: Types VarDefList OP_SEMICOLON {}
+: Types VarDefList OP_SEMICOLON {
+  if(dcast<ast_term_generic>($1)->type == K_VOID) {
+    yyerror("Definition cannot be void");
+  }
+  else {
+    $$ = std::move($2);
+  }
+ }
 ;
 
 VarDefList
-: VarDef {}
-| VarDefList OP_COMMA VarDef {}
+: VarDef {
+  auto r = make_shared<ast_decl>();
+  r->defs.push_back(dcast<ast_def>($1));
+  $$ = r;
+ }
+| VarDefList OP_COMMA VarDef {
+  $$ = std::move($1);
+  dcast<ast_decl>($$)->defs.push_back(dcast<ast_def>($3));
+ }
 ;
 
 /* VarDef ::= IDENT {"[" ConstExp "]"} ["=" InitVal] */
 VarDef
-: IDENT DefArrayDimensions {}
-| IDENT DefArrayDimensions OP_ASSIGN InitVal {}
+: IDENT DefArrayDimensions InitValOptional {
+  $$ = make_shared<ast_def>(
+    std::move(dcast<ast_term_ident>($1)->name),
+    std::move(dcast<ast_defarraydimensions>($2)->dims),
+    std::move(dcast<ast_initval>($3)));
+ }
+;
+
+InitValOptional
+: {}
+| OP_ASSIGN InitVal {
+  $$ = std::move($2);
+ }
 ;
 
 /* InitVal ::= Exp | "{" [InitVal {"," InitVal}] "}"; */
 InitVal
-: Exp {}
-| OP_LBRACE InitValList OP_RBRACE {}
+: Exp {
+  auto r = make_shared<ast_initval>();
+  r->content.emplace<std::shared_ptr<ast_exp>>(
+    std::move(dcast<ast_exp>($1)));
+  $$ = r;
+ }
+| OP_LBRACE InitValList OP_RBRACE {
+  auto r = make_shared<ast_initval>();
+  r->content.emplace<std::vector<std::shared_ptr<ast_initval>>>(
+    std::move(dcast<ast_initvallist>($2)->list));
+  $$ = r;
+ }
 ;
 
 InitValList
-: InitVal {}
-| InitValList OP_COMMA InitVal {}
+: InitVal {
+  auto r = make_shared<ast_initvallist>();
+  r->list.push_back(dcast<ast_initval>($1));
+  $$ = r;
+ }
+| InitValList OP_COMMA InitVal {
+  $$ = std::move($1);
+  dcast<ast_initvallist>($$)->list.push_back(
+    dcast<ast_initval>($3));
+ }
 ;
 
 /* FuncDef ::= FuncType IDENT "(" [FuncFParams] ")" Block; */
 FuncDef
-: Types IDENT OP_LPAREN FuncFParamsOptional OP_RPAREN Block {}
+: Types IDENT OP_LPAREN FuncFParamsOptional OP_RPAREN Block {
+  $$ = make_shared<ast_funcdef>(
+    dcast<ast_term_generic>($1)->type,
+    std::move(dcast<ast_term_ident>($2)->name),
+    std::move(dcast<ast_funcfparams>($4)->params),
+    std::move(dcast<ast_block>($6)));
+ }
 ;
 
 FuncFParamsOptional
-: {}
-| FuncFParams {}
+: {
+  $$ = make_shared<ast_funcfparams>();
+ }
+| FuncFParams {
+  $$ = std::move($1);
+ }
 ;
 
 /* FuncFParams ::= FuncFParam {"," FuncFParam}; */
 FuncFParams
-: FuncFParam {}
-| FuncFParams OP_COMMA FuncFParam {}
+: FuncFParam {
+  auto r = make_shared<ast_funcfparams>();
+  r->params.push_back(dcast<ast_funcfparam>($1));
+  $$ = r;
+ }
+| FuncFParams OP_COMMA FuncFParam {
+  $$ = std::move($1);
+  dcast<ast_funcfparams>($$)->params.push_back(
+    dcast<ast_funcfparam>($3));
+ }
 ;
 
 /* FuncFParam ::= BType IDENT ["[" "]" {"[" ConstExp "]"}]; */
 FuncFParam
-: Types IDENT {}
-| Types IDENT OP_LBRACKET OP_RBRACKET DefArrayDimensions {}
+: Types IDENT {
+  if(dcast<ast_term_generic>($1)->type == K_VOID) {
+    yyerror("Function parameters cannot be void");
+  }
+  else {
+    auto r = make_shared<ast_funcfparam>();
+    r->name = std::move(dcast<ast_term_ident>($2)->name);
+    $$ = r;
+  }
+ }
+| Types IDENT OP_LBRACKET OP_RBRACKET DefArrayDimensions {
+  if(dcast<ast_term_generic>($1)->type == K_VOID) {
+    yyerror("Function parameters cannot be void");
+  }
+  else {
+    auto r = make_shared<ast_funcfparam>();
+    r->name = std::move(dcast<ast_term_ident>($2)->name);
+    r->dims.emplace_back();
+    append_move(r->dims, dcast<ast_defarraydimensions>($5)->dims);
+    $$ = r;
+  }
+ }
 ;
 
 /* Block ::= "{" {BlockItem} "}"; */
+/* BlockItem ::= Decl | Stmt; */
 Block
-: OP_LBRACE BlockItems OP_RBRACE {}
+: OP_LBRACE BlockItems OP_RBRACE {
+  $$ = std::move($2);
+ }
 ;
 
 BlockItems
-: {}
-| BlockItems BlockItem {}
-;
-
-/* BlockItem ::= Decl | Stmt; */
-BlockItem
-: Decl {}
-| Stmt {}
+: {
+  $$ = make_shared<ast_block>();
+ }
+| BlockItems ConstDecl {
+  auto r = dcast<ast_block>($1);
+  for(std::shared_ptr<ast_constdef> &def: dcast<ast_constdecl>($2)->constdefs) {
+    r->items.emplace_back(std::move(def));
+  }
+  $$ = r;
+ }
+| BlockItems VarDecl {
+  auto r = dcast<ast_block>($1);
+  for(std::shared_ptr<ast_def> &def: dcast<ast_decl>($2)->defs) {
+    r->items.emplace_back(std::move(def));
+  }
+  $$ = r;
+ }
+| BlockItems Stmt {
+  $$ = std::move($1);
+  if($2) {
+    dcast<ast_block>($$)->items.emplace_back(dcast<ast_stmt>($2));
+  }
+ }
 ;
 
 /* Stmt ::= LVal "=" Exp ";" */
@@ -182,97 +347,205 @@ BlockItem
 /*        | "return" [Exp] ";"; */
 Stmt
 : OP_SEMICOLON {}
-| LVal OP_ASSIGN Exp OP_SEMICOLON {}
-| Exp OP_SEMICOLON {}
-| Block {}
-| K_IF OP_LPAREN Exp OP_RPAREN Stmt {}
-| K_WHILE OP_LPAREN Exp OP_RPAREN Stmt {}
-| K_BREAK OP_SEMICOLON {}
-| K_CONTINUE OP_SEMICOLON {}
-| K_RETURN OP_SEMICOLON {}
-| K_RETURN Exp OP_SEMICOLON {}
+| LVal OP_ASSIGN Exp OP_SEMICOLON {
+  $$ = make_shared<ast_stmt_assign>(
+    dcast<ast_lval>($1),
+    dcast<ast_exp>($3));
+ }
+| Exp OP_SEMICOLON {
+  $$ = make_shared<ast_stmt_eval>(
+    dcast<ast_exp>($1));
+ }
+| Block {
+  $$ = make_shared<ast_stmt_subblock>(
+    dcast<ast_block>($1));
+ }
+| K_IF OP_LPAREN Exp OP_RPAREN Stmt {
+  $$ = make_shared<ast_stmt_if>(
+    dcast<ast_exp>($3),
+    dcast<ast_stmt>($5));
+ }
+| K_WHILE OP_LPAREN Exp OP_RPAREN Stmt {
+  $$ = make_shared<ast_stmt_while>(
+    dcast<ast_exp>($3),
+    dcast<ast_stmt>($5));
+ }
+| K_BREAK OP_SEMICOLON {
+  $$ = make_shared<ast_break>();
+ }
+| K_CONTINUE OP_SEMICOLON {
+  $$ = make_shared<ast_continue>();
+ }
+| K_RETURN OP_SEMICOLON {
+  $$ = make_shared<ast_return>(nullptr);
+ }
+| K_RETURN Exp OP_SEMICOLON {
+  $$ = make_shared<ast_return>(
+    dcast<ast_exp>($2));
+ }
 ;
 
 /* ConstExp ::= AddExp; */
 /* Caveat: This can only be checked in semantic analysis. */
 /* I changed the definition to ConstExp ::= Exp; for easy parsing. */
 ConstExp
-: Exp {}
+: Exp {
+  $$ = make_shared<ast_constexp>(dcast<ast_exp>($1));
+ }
 ;
 
 /* Exp definitions. I extended it so we can now mix logic and arithmetic calculations */
 Exp
-: LOrExp {}
+: LOrExp {
+  $$ = std::move($1);
+ }
 ;
 
 LOrExp
-: LAndExp {}
-| LOrExp OP_LOR LAndExp {}
+: LAndExp {
+  $$ = std::move($1);
+ }
+| LOrExp OP_LOR LAndExp {
+  concat_rpn2($$, $1, $3, OP_LOR);
+ }
 ;
 
 LAndExp
-: EqExp {}
-| LAndExp OP_LAND EqExp {}
+: EqExp {
+  $$ = std::move($1);
+ }
+| LAndExp OP_LAND EqExp {
+  concat_rpn2($$, $1, $3, OP_LAND);
+ }
 ;
 
 EqExp
-: RelExp {}
-| EqExp OP_EQ RelExp {}
-| EqExp OP_NEQ RelExp {}
+: RelExp {
+  $$ = std::move($1);
+ }
+| EqExp OP_EQ RelExp {
+  concat_rpn2($$, $1, $3, OP_EQ);
+ }
+| EqExp OP_NEQ RelExp {
+  concat_rpn2($$, $1, $3, OP_NEQ);
+ }
 ;
 
 RelExp
-: AddExp {}
-| RelExp OP_LT AddExp {}
-| RelExp OP_GT AddExp {}
-| RelExp OP_LE AddExp {}
-| RelExp OP_GE AddExp {}
+: AddExp {
+  $$ = std::move($1);
+ }
+| RelExp OP_LT AddExp {
+  concat_rpn2($$, $1, $3, OP_LT);
+ }
+| RelExp OP_GT AddExp {
+  concat_rpn2($$, $1, $3, OP_GT);
+ }
+| RelExp OP_LE AddExp {
+  concat_rpn2($$, $1, $3, OP_LE);
+ }
+| RelExp OP_GE AddExp {
+  concat_rpn2($$, $1, $3, OP_GE);
+ }
 ;
 
 AddExp
-: MulExp {}
-| AddExp OP_ADD MulExp {}
-| AddExp OP_SUB MulExp {}
+: MulExp {
+  $$ = std::move($1);
+ }
+| AddExp OP_ADD MulExp {
+  concat_rpn2($$, $1, $3, OP_ADD);
+ }
+| AddExp OP_SUB MulExp {
+  concat_rpn2($$, $1, $3, OP_SUB);
+ }
 ;
 
 MulExp
-: UnaryExp {}
-| MulExp OP_MUL UnaryExp {}
-| MulExp OP_DIV UnaryExp {}
-| MulExp OP_REM UnaryExp {}
+: UnaryExp {
+  $$ = std::move($1);
+ }
+| MulExp OP_MUL UnaryExp {
+  concat_rpn2($$, $1, $3, OP_MUL);
+ }
+| MulExp OP_DIV UnaryExp {
+  concat_rpn2($$, $1, $3, OP_DIV);
+ }
+| MulExp OP_REM UnaryExp {
+  concat_rpn2($$, $1, $3, OP_REM);
+ }
 ;
 
 UnaryExp
-: PrimaryExp {}
-| IDENT OP_LPAREN FuncRParamsOptional OP_RPAREN {}
-| OP_ADD UnaryExp {}
-| OP_SUB UnaryExp {}
-| OP_NEG UnaryExp {}
+: TerminalExp {
+  $$ = std::move($1);
+ }
+| OP_ADD UnaryExp {
+  concat_rpn1($$, $2, OP_ADD);
+ }
+| OP_SUB UnaryExp {
+  concat_rpn1($$, $2, OP_SUB);
+ }
+| OP_NEG UnaryExp {
+  concat_rpn1($$, $2, OP_NEG);
+ }
 ;
 
 FuncRParamsOptional
-: {}
-| FuncRParams {}
+: {
+  $$ = make_shared<ast_funcrparams>();
+ }
+| FuncRParams {
+  $$ = std::move($1);
+ }
 ;
 
 FuncRParams
-: Exp {}
-| FuncRParams OP_COMMA Exp {}
+: Exp {
+  auto r = make_shared<ast_funcrparams>();
+  r->params.push_back(dcast<ast_exp>($1));
+  $$ = r;
+ }
+| FuncRParams OP_COMMA Exp {
+  $$ = std::move($1);
+  dcast<ast_funcrparams>($$)->params.push_back(dcast<ast_exp>($3));
+ }
 ;
 
-PrimaryExp
-: OP_LPAREN Exp OP_RPAREN {}
-| LVal {}
-| INT_LITERAL {}
+TerminalExp
+: OP_LPAREN Exp OP_RPAREN {
+  $$ = make_shared<ast_paren>(dcast<ast_exp>($2));
+ }
+| IDENT OP_LPAREN FuncRParamsOptional OP_RPAREN {
+  $$ = make_shared<ast_funccall>(
+    std::move(dcast<ast_term_ident>($1)->name),
+    std::move(dcast<ast_funcrparams>($3)->params));
+ }
+| LVal {
+  $$ = std::move($1);
+ }
+| INT_LITERAL {
+  $$ = make_shared<ast_int_literal>(
+    dcast<ast_term_int>($1)->val);
+ }
 ;
 
 LVal
-: IDENT RefArrayDimensions {}
+: IDENT RefArrayDimensions {
+  $$ = make_shared<ast_lval>(
+    std::move(dcast<ast_term_ident>($1)->name),
+    std::move(dcast<ast_refarraydimensions>($2)->dims));
+ }
 ;
 
 RefArrayDimensions
-: {}
-| RefArrayDimensions OP_LBRACKET Exp OP_RBRACKET {}
+: {
+  $$ = make_shared<ast_refarraydimensions>();
+ }
+| RefArrayDimensions OP_LBRACKET Exp OP_RBRACKET {
+  $$ = std::move($1);
+  dcast<ast_refarraydimensions>($$)->dims.push_back(dcast<ast_exp>($3));
+ }
 ;
 
 %%

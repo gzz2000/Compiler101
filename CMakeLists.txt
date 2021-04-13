@@ -12,6 +12,11 @@ project(compiler101)
 find_package(BISON)
 find_package(FLEX)
 
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED True)
+
+include_directories(${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_BINARY_DIR})
+
 bison_target(sysy_parser sysy.y ${CMAKE_CURRENT_BINARY_DIR}/sysy.tab.cpp
   DEFINES_FILE ${CMAKE_CURRENT_BINARY_DIR}/sysy.tab.h
   COMPILE_FLAGS -Wcounterexamples)
