@@ -125,11 +125,11 @@ ConstDefList
 
 /* ConstDef ::= IDENT {"[" ConstExp "]"} "=" ConstInitVal; */
 ConstDef
-: IDENT DefArrayDimensions OP_ASSIGN ConstInitVal {
+: IDENT DefArrayDimensions OP_ASSIGN InitVal {
   $$ = make_shared<ast_constdef>(
     std::move(dcast<ast_term_ident>($1)->name),
     std::move(dcast<ast_defarraydimensions>($2)->dims),
-    dcast<ast_constinitval>($4));
+    dcast<ast_initval>($4));
  }
 ;
 
@@ -137,39 +137,10 @@ DefArrayDimensions
 : {
   $$ = make_shared<ast_defarraydimensions>();
  }
-| DefArrayDimensions OP_LBRACKET ConstExp OP_RBRACKET {
+| DefArrayDimensions OP_LBRACKET Exp OP_RBRACKET {
   $$ = std::move($1);
   dcast<ast_defarraydimensions>($$)->dims.push_back(
-    dcast<ast_constexp>($3));
- }
-;
-
-/* ConstInitVal ::= ConstExp | "{" [ConstInitVal {"," ConstInitVal}] "}"; */
-ConstInitVal
-: ConstExp {
-  auto r = make_shared<ast_constinitval>();
-  r->content.emplace<std::shared_ptr<ast_constexp>>(
-    dcast<ast_constexp>($1));
-  $$ = r;
- }
-| OP_LBRACE ConstInitValList OP_RBRACE {
-  auto r = make_shared<ast_constinitval>();
-  r->content.emplace<std::vector<std::shared_ptr<ast_constinitval>>>(
-    std::move(dcast<ast_constinitvallist>($2)->list));
-  $$ = r;
- }
-;
-
-ConstInitValList
-: ConstInitVal {
-  auto r = make_shared<ast_constinitvallist>();
-  r->list.push_back(dcast<ast_constinitval>($1));
-  $$ = r;
- }
-| ConstInitValList OP_COMMA ConstInitVal {
-  $$ = std::move($1);
-  dcast<ast_constinitvallist>($$)->list.push_back(
-    dcast<ast_constinitval>($3));
+    dcast<ast_exp>($3));
  }
 ;
 
@@ -412,12 +383,6 @@ Stmt
 
 /* ConstExp ::= AddExp; */
 /* Caveat: This can only be checked in semantic analysis. */
-/* I changed the definition to ConstExp ::= Exp; for easy parsing. */
-ConstExp
-: Exp {
-  $$ = make_shared<ast_constexp>(dcast<ast_exp>($1));
- }
-;
 
 /* Exp definitions. I extended it so we can now mix logic and arithmetic calculations */
 Exp

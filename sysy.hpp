@@ -48,9 +48,7 @@ struct ast_compunit;
 struct ast_constdef;
 struct ast_def;
 struct ast_funcdef;
-struct ast_constexp;
 struct ast_exp;
-struct ast_constinitval;
 struct ast_initval;
 struct ast_funcfparam;
 struct ast_block;
@@ -76,32 +74,19 @@ struct ast_decl: ast_nodebase {  // intermediate only
 };
 
 struct ast_defarraydimensions: ast_nodebase {  // intermediate only
-  std::vector<std::shared_ptr<ast_constexp>> dims;
-};
-
-struct ast_constdef: ast_blockitem {
-  std::string name;
-  std::vector<std::shared_ptr<ast_constexp>> dims;
-  std::shared_ptr<ast_constinitval> init;
-
-  inline ast_constdef(std::string &&_name, std::vector<std::shared_ptr<ast_constexp>> &&_dims, std::shared_ptr<ast_constinitval> &&_init): name(std::move(_name)), dims(std::move(_dims)), init(std::move(_init)) {}
-};
-
-struct ast_constinitval: ast_nodebase {
-  std::variant<std::shared_ptr<ast_constexp>,
-               std::vector<std::shared_ptr<ast_constinitval>>> content;
-};
-
-struct ast_constinitvallist: ast_nodebase {  // intermediate only
-  std::vector<std::shared_ptr<ast_constinitval>> list;
+  std::vector<std::shared_ptr<ast_exp>> dims;
 };
 
 struct ast_def: ast_blockitem {
   std::string name;
-  std::vector<std::shared_ptr<ast_constexp>> dims;
+  std::vector<std::shared_ptr<ast_exp>> dims;
   std::shared_ptr<ast_initval> init;  // optional
   
-  inline ast_def(std::string &&_name, std::vector<std::shared_ptr<ast_constexp>> &&_dims, std::shared_ptr<ast_initval> &&_init): name(std::move(_name)), dims(std::move(_dims)), init(std::move(_init)) {}
+  inline ast_def(std::string &&_name, std::vector<std::shared_ptr<ast_exp>> &&_dims, std::shared_ptr<ast_initval> &&_init): name(std::move(_name)), dims(std::move(_dims)), init(std::move(_init)) {}
+};
+
+struct ast_constdef: ast_def {
+  inline ast_constdef(std::string &&_name, std::vector<std::shared_ptr<ast_exp>> &&_dims, std::shared_ptr<ast_initval> &&_init): ast_def(std::move(_name), std::move(_dims), std::move(_init)) {}
 };
 
 struct ast_initval: ast_nodebase {
@@ -129,9 +114,9 @@ struct ast_funcfparams: ast_nodebase {  // intermediate only
 // type is always int
 struct ast_funcfparam: ast_nodebase {
   std::string name;
-  std::vector<std::shared_ptr<ast_constexp>> dims; // if present, the first element is defined to be nullptr.
+  std::vector<std::shared_ptr<ast_exp>> dims; // if present, the first element is defined to be nullptr.
   
-  // inline ast_funcfparam(std::string &&_name, std::vector<std::shared_ptr<ast_constexp>> &&_dims): name(std::move(_name)), dims(std::move(_dims)) {}
+  // inline ast_funcfparam(std::string &&_name, std::vector<std::shared_ptr<ast_exp>> &&_dims): name(std::move(_name)), dims(std::move(_dims)) {}
 };
 
 struct ast_block: ast_nodebase {
@@ -179,11 +164,6 @@ struct ast_continue: ast_stmt {};
 struct ast_return: ast_stmt {
   std::shared_ptr<ast_exp> val;   // nullptr if no return value.
   inline ast_return(std::shared_ptr<ast_exp> _val): val(_val) {}
-};
-
-struct ast_constexp: ast_nodebase {
-  std::shared_ptr<ast_exp> exp;
-  inline ast_constexp(std::shared_ptr<ast_exp> _exp): exp(_exp) {}
 };
 
 struct ast_unaryop: ast_nodebase {
