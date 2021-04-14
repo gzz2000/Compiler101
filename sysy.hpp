@@ -193,11 +193,6 @@ struct ast_unaryop: ast_nodebase {
 
 struct ast_exp_term: ast_nodebase {};
 
-struct ast_paren: ast_exp_term {
-  std::shared_ptr<ast_exp> exp;
-  inline ast_paren(std::shared_ptr<ast_exp> _exp): exp(_exp) {}
-};
-
 struct ast_lval: ast_exp_term {
   std::string name;
   std::vector<std::shared_ptr<ast_exp>> dims;

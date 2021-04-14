@@ -516,6 +516,9 @@ UnaryExp
 | OP_NEG UnaryExp {
   concat_rpn1($$, $2, OP_NEG);
  }
+| OP_LPAREN Exp OP_RPAREN {
+  $$ = std::move($2);
+ }
 ;
 
 FuncRParamsOptional
@@ -540,10 +543,7 @@ FuncRParams
 ;
 
 TerminalExp
-: OP_LPAREN Exp OP_RPAREN {
-  $$ = make_shared<ast_paren>(dcast<ast_exp>($2));
- }
-| IDENT OP_LPAREN FuncRParamsOptional OP_RPAREN {
+: IDENT OP_LPAREN FuncRParamsOptional OP_RPAREN {
   $$ = make_shared<ast_funccall>(
     std::move(dcast<ast_term_ident>($1)->name),
     std::move(dcast<ast_funcrparams>($3)->params));
