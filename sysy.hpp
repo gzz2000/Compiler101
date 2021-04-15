@@ -117,11 +117,11 @@ struct ast_funcfparams: ast_nodebase {  // intermediate only
 };
 
 // type is always int
-struct ast_funcfparam: ast_nodebase {
+struct ast_funcfparam: ast_def {
   std::string name;
   std::vector<std::shared_ptr<ast_exp>> dims; // if present, the first element is defined to be nullptr.
-  
-  // inline ast_funcfparam(std::string &&_name, std::vector<std::shared_ptr<ast_exp>> &&_dims): name(std::move(_name)), dims(std::move(_dims)) {}
+
+  inline ast_funcfparam(std::string &&_name): ast_def(std::move(_name), {}, {}) {}
 };
 
 struct ast_block: ast_nodebase {

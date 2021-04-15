@@ -266,9 +266,7 @@ FuncFParam
     yyerror(nullptr, "Function parameters cannot be void");
   }
   else {
-    auto r = make_shared<ast_funcfparam>();
-    r->name = std::move(dcast<ast_term_ident>($2)->name);
-    $$ = r;
+    $$ = make_shared<ast_funcfparam>(std::move(dcast<ast_term_ident>($2)->name));
   }
  }
 | Types IDENT OP_LBRACKET OP_RBRACKET DefArrayDimensions {
@@ -276,8 +274,7 @@ FuncFParam
     yyerror(nullptr, "Function parameters cannot be void");
   }
   else {
-    auto r = make_shared<ast_funcfparam>();
-    r->name = std::move(dcast<ast_term_ident>($2)->name);
+    auto r = make_shared<ast_funcfparam>(std::move(dcast<ast_term_ident>($2)->name));
     r->dims.emplace_back();
     append_move(r->dims, dcast<ast_defarraydimensions>($5)->dims);
     $$ = r;
