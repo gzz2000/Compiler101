@@ -15,6 +15,10 @@ struct ee_symbol {
   int id;
 };
 
+inline bool operator == (ee_symbol a, ee_symbol b) {
+  return a.type == b.type && a.id == b.id;
+}
+
 struct ee_decl: ee_base {
   ee_symbol sym;
   std::optional<int> size;

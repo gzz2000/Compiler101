@@ -5,6 +5,7 @@
 #include <unordered_map>
 #include <stack>
 #include <variant>
+#include <iostream>
 
 // overload op constructor: from https://en.cppreference.com/w/cpp/utility/variant/visit
 // helper constant for the visitor #3
@@ -87,7 +88,7 @@ struct decl_symbol_manager {
     ee_decl decl;
     decl.sym.type = c;
     decl.sym.id = get_cnt<c>()++;
-    decl.sym.size.emplace(size);
+    decl.size.emplace(size);
     out_decls.push_back(decl);
     return decl.sym;
   }
@@ -118,25 +119,25 @@ ev_lval_ret eval_lval(const ast_lval &lval,
               << "\" not found in current context." << std::endl;
     egerror("Undefined symbol");
   }
-  if(t->dims.size() > def->dims.size()) {
+  if(lval.dims.size() > def->dims.size()) {
     egerror("Too many dimensions in array reference.");
   }
 
   std::optional<ee_rval> index;
   if(lval.dims.size()) {
     ast_exp pos_calc;
-    for(int j = 0; j < lval.dims.size(); ++j) {
+    for(int j = 0; j < (int)lval.dims.size(); ++j) {
       append_copy(pos_calc.rpn, lval.dims[j]->rpn);
       if(j > 0) {
         pos_calc.rpn.emplace_back(std::make_pair(OP_ADD, 2));
       }
-      if(j < lval.dims.size() - 1) {
-        pos_calc.rpn.emplace_back(std::make_shared<ast_int_literal>(lval.dims[j + 1]));
+      if(j < (int)lval.dims.size() - 1) {
+        pos_calc.rpn.emplace_back(std::make_shared<ast_int_literal>(def->dims[j + 1]));
         pos_calc.rpn.emplace_back(std::make_pair(OP_MUL, 2));
       }
     }
     int mulrem = 4;  // sizeof(int)
-    for(int j = lval.dims.size(); j < def->dims.size(); ++j) {
+    for(int j = lval.dims.size(); j < (int)def->dims.size(); ++j) {
       mulrem *= def->dims[j];
     }
     pos_calc.rpn.emplace_back(std::make_shared<ast_int_literal>(mulrem));
@@ -147,13 +148,13 @@ ev_lval_ret eval_lval(const ast_lval &lval,
   
   if(lval.dims.size() < def->dims.size()) {
     // this expression generates a pointer.
-    if(!index) return def->symbol;
+    if(!index) return def->sym;
     // add
     ee_symbol r = out_decls.next<'t'>();
     ee_expr_op op;
     op.sym = r;
-    op.a.emplace(def->symbol);
-    op.b.emplace(*index);
+    op.a = def->sym;
+    op.b = *index;
     op.op = OP_ADD;
     op.numop = 2;
     out_assigns.emplace_back(op);
@@ -161,18 +162,18 @@ ev_lval_ret eval_lval(const ast_lval &lval,
   }
   else {
     // this expression generates an int reference.
-    if(def->vals && (!index || std::get_if<int>(*index))) {
+    if(def->vals && (!index || std::get_if<int>(&index.value()))) {
       // constant. congrats.
       int idx = (index ? std::get<int>(*index) : 0);
-      if(idx > def->vals.size()) {
+      if(idx > (int)def->vals->size()) {
         egerror("Too large index when accessing a const array.");
       }
-      return def->vals[idx];
+      return def->vals->operator[](idx);
     }
     else {
       // we need a runtime access.
       ee_lval ret;
-      ret.sym = def->symbol;
+      ret.sym = def->sym;
       ret.sym_idx = index;
       return ret;
     }
@@ -186,11 +187,11 @@ ee_rval eval_exp(const ast_exp &exp,
   std::stack<ee_rval> s;
   std::stack<std::optional<int /* label id */>> sc_labels;
   
-  for(int i = 0; i < exp.rpn.size(); ++i) {
+  for(int i = 0; i < (int)exp.rpn.size(); ++i) {
     std::visit(overloaded{
         [&] (std::shared_ptr<ast_exp_term> term) {
           if(auto t = dcast<ast_int_literal>(term); t) {
-            s.emplace_back(t->val);
+            s.emplace(t->val);
           }
           else if(auto t = dcast<ast_funccall>(term); t) {
             // push a function call
@@ -199,8 +200,7 @@ ee_rval eval_exp(const ast_exp &exp,
             call.params.reserve(t->params.size());
             for(auto expp: t->params) {
               call.params.push_back(
-                std::get<ee_rval>(
-                  eval_exp(*expp, defs, out_assigns, out_decls)));
+                eval_exp(*expp, defs, out_assigns, out_decls));
             }
             ee_symbol sym = out_decls.next<'t'>();
             call.store.emplace(sym);
@@ -269,7 +269,7 @@ ee_rval eval_exp(const ast_exp &exp,
                     else {
                       // fallback to the second op when we meet it.
                       s.push(ee_rval(v));
-                      sc_labels.emplace_back();
+                      sc_labels.emplace();
                     }
                   },
                   [&] (ee_symbol sym) {
@@ -281,7 +281,7 @@ ee_rval eval_exp(const ast_exp &exp,
                     cgo.lop = (ops.first == OP_LAND ? OP_EQ : OP_NEQ);
                     cgo.label_id = ++global_label_id;
                     out_assigns.emplace_back(cgo);
-                    sc_labels.emplace_back(cgo.label_id);
+                    sc_labels.emplace(cgo.label_id);
                   }
                 },
                 a);
@@ -302,15 +302,13 @@ ee_rval eval_exp(const ast_exp &exp,
                 out_assigns.emplace_back(ea);
                 // put the label.
                 if(label_id) {
-                  ee_expr_label el;
-                  el.label_id = *label_id;
-                  out_assigns.emplace_back(el);
+                  out_assigns.push_back(ee_expr_label(*label_id));
                 }
                 s.push(sym);
               };
               std::visit(overloaded{
-                  [&] (int a) {
-                    if(auto it = std::get_if<int>(b); it) {
+                  [&] (int) {   // constant, simplified
+                    if(auto it = std::get_if<int>(&b); it) {
                       s.push(*it); // constant result
                     }
                     else {
@@ -329,7 +327,7 @@ ee_rval eval_exp(const ast_exp &exp,
           ee_rval a(0), b(0);
           b = s.top(); s.pop();
           if(ops.second == 2) { a = s.top(); s.pop(); }
-          if(std::get_if<int>(a) && std::get_if<int>(b)) {
+          if(std::get_if<int>(&a) && std::get_if<int>(&b)) {
             // constant. evaluate the result at compile time.
             int na = std::get<int>(a), nb = std::get<int>(b), ans;
             if(ops.second == 1) {
@@ -404,7 +402,7 @@ inline void process_initlist(int *dims, int sz_dims,
         }
         store[0] = exp;
       },
-      [&] (std::vector<std::shared_ptr<ast_initval>> &v) {
+      [&] (const std::vector<std::shared_ptr<ast_initval>> &v) {
         if(!sz_dims) {
           egerror("Initializing a single number with an array.");
         }
@@ -416,7 +414,7 @@ inline void process_initlist(int *dims, int sz_dims,
           }
           std::visit(overloaded{
               [&] (std::shared_ptr<ast_exp> subexp) {
-                store[i] = *subexp;
+                store[i] = subexp;
                 ++i;
                 ++i_dec[sz_dims - 1];
                 for(int j = sz_dims - 1; j >= 1; --i) {
@@ -427,7 +425,7 @@ inline void process_initlist(int *dims, int sz_dims,
                   else break;
                 }
               },
-              [&] (std::vector<std::shared_ptr<ast_initval>> &v) {
+              [&] (std::vector<std::shared_ptr<ast_initval>> &) {
                 // locate the last complete subarray.
                 if(i_dec[sz_dims - 1]) {
                   egerror("Initializing a single number with a subarray.");
@@ -467,14 +465,14 @@ inline void push_def(layered_store<g_def> &defs,
   g_def &d = defs.m[cdef->name];
   d.dims.resize(cdef->dims.size());
   int size = 1;
-  for(int i = (def_type_c == 'p' ? 1 : 0); i < cdef->dims.size(); ++i) {
-    ee_rval r = eval_exp(cdef->dims[i]->exp.get(), defs);
+  for(int i = (def_type_c == 'p' ? 1 : 0); i < (int)cdef->dims.size(); ++i) {
+    ee_rval r = eval_exp(*cdef->dims[i], defs, out_assigns, out_decls);
     std::visit(overloaded{
         [&] (int a) {
           d.dims[i] = a;
           size *= a;
         },
-        [&] (ee_symbol sym) {
+        [&] (ee_symbol) {
           egerror("Non-constant expression used to define array dims.");
         }
       }, r);
@@ -498,7 +496,7 @@ inline void push_def(layered_store<g_def> &defs,
               [&] (int v) {
                 d.vals->operator[](i) = v;
               },
-              [&] (ee_symbol sym) {
+              [&] (ee_symbol) {
                 egerror("Non-constant expression used to initialize const definition.");
               }
             }, r);
@@ -528,7 +526,7 @@ const static int lops[6] = {OP_EQ, OP_NEQ, OP_LT, OP_GE, OP_LE, OP_GT};
 
 void eeyore_gen_stmt(std::shared_ptr<ast_stmt> stmt,
                      decl_symbol_manager &declman,
-                     layered_store<g_def> &last_defs,
+                     layered_store<g_def> &defs,
                      std::vector<ee_expr_types> &exprs,
                      int lbl_loop_st, int lbl_loop_ed) {
   auto make_cond_goto = [&] (ee_rval cond, bool inv, int lbl) {
@@ -543,7 +541,7 @@ void eeyore_gen_stmt(std::shared_ptr<ast_stmt> stmt,
           ee_expr_cond_goto cgo;
           cgo.label_id = lbl;
           if(!exprs.empty()) {
-            auto it = std::get_if<ee_expr_op>(*exprs.rbegin());
+            auto it = std::get_if<ee_expr_op>(&*exprs.rbegin());
             if(it && it->sym == sym) {
               int t = -1;
               for(int i = 0; i < 6; ++i) if(it->op == lops[i]) t = i;
@@ -566,8 +564,8 @@ void eeyore_gen_stmt(std::shared_ptr<ast_stmt> stmt,
   };
   
   if(auto it = dcast<ast_stmt_assign>(stmt); it) {
-    ev_lval_ret lvret = eval_lval(it->l.get(), defs, exprs, declman);
-    ee_rval rval = eval_exp(it->r.get(), defs, exprs, declman);
+    ev_lval_ret lvret = eval_lval(*it->l, defs, exprs, declman);
+    ee_rval rval = eval_exp(*it->r, defs, exprs, declman);
     ee_lval lv;
     std::visit(overloaded{
         [&] (int) {
@@ -582,21 +580,21 @@ void eeyore_gen_stmt(std::shared_ptr<ast_stmt> stmt,
       }, lvret);
     ee_expr_assign op;
     op.lval = lv;
-    op.rval = rval;
+    op.a = rval;
     exprs.push_back(op);
   }
   else if(auto it = dcast<ast_stmt_eval>(stmt); it) {
-    eval_exp(it->v.get(), defs, exprs, declman);
+    eval_exp(*it->v, defs, exprs, declman);
   }
   else if(auto it = dcast<ast_stmt_subblock>(stmt); it) {
-    eeyore_gen_block(it->b.get(), declman, defs, exprs,
+    eeyore_gen_block(*it->b, declman, defs, exprs,
                      lbl_loop_st, lbl_loop_ed);
   }
   else if(auto it = dcast<ast_stmt_if>(stmt); it) {
     int lbl_jo_then = ++global_label_id;
     int lbl_jo_else;
     if(it->exec_else) lbl_jo_else = ++global_label_id;
-    ee_rval cond = eval_exp(it->cond.get(), defs, exprs, declman);
+    ee_rval cond = eval_exp(*it->cond, defs, exprs, declman);
     make_cond_goto(cond, true, lbl_jo_then);
     eeyore_gen_stmt(it->exec, declman, defs, exprs,
                     lbl_loop_st, lbl_loop_ed);
@@ -611,7 +609,7 @@ void eeyore_gen_stmt(std::shared_ptr<ast_stmt> stmt,
   else if(auto it = dcast<ast_stmt_while>(stmt); it) {
     int lbl_st = ++global_label_id, lbl_ed = ++global_label_id;
     exprs.push_back(ee_expr_label(lbl_st));
-    ee_rval cond = eval_exp(it->cond.get(), defs, exprs, declman);
+    ee_rval cond = eval_exp(*it->cond, defs, exprs, declman);
     make_cond_goto(cond, true, lbl_ed);
     eeyore_gen_stmt(it->exec, declman, defs, exprs,
                     lbl_st, lbl_ed);
@@ -632,7 +630,7 @@ void eeyore_gen_stmt(std::shared_ptr<ast_stmt> stmt,
   }
   else if(auto it = dcast<ast_stmt_return>(stmt); it) {
     ee_expr_ret ret;
-    if(it->val) ret.val = eval_exp(it->val.get(), defs, exprs, declman);
+    if(it->val) ret.val = eval_exp(*it->val, defs, exprs, declman);
     exprs.push_back(ret);
   }
   else {
@@ -678,7 +676,7 @@ std::shared_ptr<ee_program> eeyore_gen(std::shared_ptr<ast_compunit> sysy) {
     layered_store<g_def> defs_with_params(defs);
     
     for(int i = 0; i < ee_f.num_params; ++i) {
-      push_def<'p'>(defs_with_params, sysy_fdef->params[i], ee_f.exprs, ee_f.decls);
+      push_def<'p'>(defs_with_params, sysy_fdef->params[i], ee_f.exprs, func_declman);
     }
     if(sysy_fdef->name == "main") {
       ee_f.exprs = std::move(t_definits);
@@ -693,7 +691,7 @@ std::shared_ptr<ee_program> eeyore_gen(std::shared_ptr<ast_compunit> sysy) {
     eeyore_gen_block(*sysy_fdef->block, func_declman, defs_with_params, ee_f.exprs,
                      -1, -1);
     if(sysy_fdef->type == K_VOID) {
-      ee_f.exprs.push(ee_expr_ret());
+      ee_f.exprs.push_back(ee_expr_ret());
     }
   }
   return ret;
