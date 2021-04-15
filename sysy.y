@@ -2,12 +2,20 @@
 #include "sysy.hpp"
 
 int yylex();
-void yyerror(const char *s);
+void yyerror(std::shared_ptr<ast_nodebase>, const char *s);
 
 using std::make_shared;
 
 #define YYSTYPE std::shared_ptr<ast_nodebase>
 
+/* ltag: for support of short-circuit logical operators */
+#define concat_rpn2_ltag(ret, a, b, op) {        \
+    auto r = dcast<ast_exp>(a);                  \
+    r->rpn.emplace_back(std::make_pair(op, 1));  \
+    append_move(r->rpn, dcast<ast_exp>(b)->rpn); \
+    r->rpn.emplace_back(std::make_pair(op, 2));  \
+    ret = r;                                     \
+  }
 #define concat_rpn2(ret, a, b, op) {             \
     auto r = dcast<ast_exp>(a);                  \
     append_move(r->rpn, dcast<ast_exp>(b)->rpn); \
@@ -19,6 +27,8 @@ using std::make_shared;
     dcast<ast_exp>(ret)->rpn.emplace_back(std::make_pair(op, 1)); \
   }
 %}
+
+%parse-param {std::shared_ptr<ast_compunit> &root_store}
 
 %token SP_LEX_ERROR
 
@@ -69,12 +79,13 @@ using std::make_shared;
 /* Decl ::= ConstDecl | VarDecl; */
 CompUnit
 : {
-  $$ = make_shared<ast_compunit>();
+  root_store = make_shared<ast_compunit>();
+  $$ = root_store;
  }
 | CompUnit ConstDecl {
   $$ = std::move($1);
   append_move(
-    dcast<ast_compunit>($$)->constdefs,
+    dcast<ast_compunit>($$)->defs,
     dcast<ast_constdecl>($2)->constdefs);
  }
 | CompUnit VarDecl {
@@ -94,7 +105,7 @@ CompUnit
 ConstDecl
 : K_CONST Types ConstDefList OP_SEMICOLON {
   if(dcast<ast_term_generic>($2)->type == K_VOID) {
-    yyerror("Definition cannot be void");
+    yyerror(nullptr, "Definition cannot be void");
   }
   else {
     $$ = std::move($3);
@@ -148,7 +159,7 @@ DefArrayDimensions
 VarDecl
 : Types VarDefList OP_SEMICOLON {
   if(dcast<ast_term_generic>($1)->type == K_VOID) {
-    yyerror("Definition cannot be void");
+    yyerror(nullptr, "Definition cannot be void");
   }
   else {
     $$ = std::move($2);
@@ -252,7 +263,7 @@ FuncFParams
 FuncFParam
 : Types IDENT {
   if(dcast<ast_term_generic>($1)->type == K_VOID) {
-    yyerror("Function parameters cannot be void");
+    yyerror(nullptr, "Function parameters cannot be void");
   }
   else {
     auto r = make_shared<ast_funcfparam>();
@@ -262,7 +273,7 @@ FuncFParam
  }
 | Types IDENT OP_LBRACKET OP_RBRACKET DefArrayDimensions {
   if(dcast<ast_term_generic>($1)->type == K_VOID) {
-    yyerror("Function parameters cannot be void");
+    yyerror(nullptr, "Function parameters cannot be void");
   }
   else {
     auto r = make_shared<ast_funcfparam>();
@@ -396,7 +407,7 @@ LOrExp
   $$ = std::move($1);
  }
 | LOrExp OP_LOR LAndExp {
-  concat_rpn2($$, $1, $3, OP_LOR);
+  concat_rpn2_ltag($$, $1, $3, OP_LOR);
  }
 ;
 
@@ -405,7 +416,7 @@ LAndExp
   $$ = std::move($1);
  }
 | LAndExp OP_LAND EqExp {
-  concat_rpn2($$, $1, $3, OP_LAND);
+  concat_rpn2_ltag($$, $1, $3, OP_LAND);
  }
 ;
 

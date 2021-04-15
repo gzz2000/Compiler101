@@ -7,10 +7,16 @@
 #include <variant>
 #include <iterator>
 
-template<typename vec_t>
-inline void append_move(vec_t &a, vec_t &b) {
+template<typename vec_t1, typename vec_t2>
+inline void append_move(vec_t1 &a, vec_t2 &b) {
   a.reserve(a.size() + b.size());
   a.insert(a.end(), std::make_move_iterator(b.begin()), std::make_move_iterator(b.end()));
+}
+
+template<typename vec_t>
+inline void append_copy(vec_t &a, const vec_t &b) {
+  a.reserve(a.size() + b.size());
+  a.insert(a.end(), b.begin(), b.end());
 }
 
 // implementation from https://en.cppreference.com/w/cpp/memory/shared_ptr/pointer_cast, copied here for C++17
@@ -57,7 +63,6 @@ struct ast_stmt;
 struct ast_lval;
 
 struct ast_compunit: ast_nodebase {
-  std::vector<std::shared_ptr<ast_constdef>> constdefs;
   std::vector<std::shared_ptr<ast_def>> defs;
   std::vector<std::shared_ptr<ast_funcdef>> funcdefs;
 };
