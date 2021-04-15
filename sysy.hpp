@@ -162,13 +162,13 @@ struct ast_stmt_while: ast_stmt {
   inline ast_stmt_while(std::shared_ptr<ast_exp> _cond, std::shared_ptr<ast_stmt> _exec): cond(_cond), exec(_exec) {}
 };
 
-struct ast_break: ast_stmt {};
+struct ast_stmt_break: ast_stmt {};
 
-struct ast_continue: ast_stmt {};
+struct ast_stmt_continue: ast_stmt {};
 
-struct ast_return: ast_stmt {
+struct ast_stmt_return: ast_stmt {
   std::shared_ptr<ast_exp> val;   // nullptr if no return value.
-  inline ast_return(std::shared_ptr<ast_exp> _val): val(_val) {}
+  inline ast_stmt_return(std::shared_ptr<ast_exp> _val): val(_val) {}
 };
 
 struct ast_unaryop: ast_nodebase {

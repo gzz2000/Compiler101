@@ -375,16 +375,16 @@ Stmt
     dcast<ast_stmt>($5));
  }
 | K_BREAK OP_SEMICOLON {
-  $$ = make_shared<ast_break>();
+  $$ = make_shared<ast_stmt_break>();
  }
 | K_CONTINUE OP_SEMICOLON {
-  $$ = make_shared<ast_continue>();
+  $$ = make_shared<ast_stmt_continue>();
  }
 | K_RETURN OP_SEMICOLON {
-  $$ = make_shared<ast_return>(nullptr);
+  $$ = make_shared<ast_stmt_return>(nullptr);
  }
 | K_RETURN Exp OP_SEMICOLON {
-  $$ = make_shared<ast_return>(
+  $$ = make_shared<ast_stmt_return>(
     dcast<ast_exp>($2));
  }
 ;
