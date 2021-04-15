@@ -322,7 +322,7 @@ ee_rval eval_exp(const ast_exp &exp,
           if(std::get_if<int>(&a) && std::get_if<int>(&b)) {
             // constant. evaluate the result at compile time.
             int na = std::get<int>(a), nb = std::get<int>(b), ans;
-            if(ops.second == 1) {
+            if(ops.second == 2) {
 #define P(name, op)                             \
               case OP_##name:                   \
                 ans = (na op nb);               \
@@ -409,7 +409,7 @@ inline void process_initlist(int *dims, int sz_dims,
                 store[i] = subexp;
                 ++i;
                 ++i_dec[sz_dims - 1];
-                for(int j = sz_dims - 1; j >= 1; --i) {
+                for(int j = sz_dims - 1; j >= 1; --j) {
                   if(i_dec[j] >= dims[j]) {
                     i_dec[j] -= dims[j];
                     ++i_dec[j - 1];

@@ -122,6 +122,7 @@ DEFOUT(const ee_funcdef &fdef) {
         out << expr_t;
       }, expr);
   }
+  out << "end f_" << fdef.name << endl;
   return out;
 }
 
