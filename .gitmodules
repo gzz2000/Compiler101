@@ -1,6 +1,0 @@
-[submodule "open-test-cases"]
-	path = open-test-cases
-	url = https://github.com/pku-minic/open-test-cases.git
-[submodule "minivm"]
-	path = minivm
-	url = https://github.com/pku-minic/MiniVM.git
