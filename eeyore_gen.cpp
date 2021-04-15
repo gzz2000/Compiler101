@@ -7,14 +7,6 @@
 #include <variant>
 #include <iostream>
 
-// overload op constructor: from https://en.cppreference.com/w/cpp/utility/variant/visit
-// helper constant for the visitor #3
-template<char> inline constexpr bool always_false_v = false;
-// helper type for the visitor #4
-template<class... Ts> struct overloaded : Ts... { using Ts::operator()...; };
-// explicit deduction guide (not needed as of C++20)
-template<class... Ts> overloaded(Ts...) -> overloaded<Ts...>;
-
 void egerror(const char *str) {
   printf("Eeyore generation error: %s\n", str);
   exit(3);
@@ -551,6 +543,7 @@ void eeyore_gen_stmt(std::shared_ptr<ast_stmt> stmt,
                 cgo.lop = lops[t ^ inv];
                 exprs.pop_back();
                 exprs.push_back(cgo);
+                // caveat: unused var.
                 return;
               }
             }
@@ -585,6 +578,13 @@ void eeyore_gen_stmt(std::shared_ptr<ast_stmt> stmt,
   }
   else if(auto it = dcast<ast_stmt_eval>(stmt); it) {
     eval_exp(*it->v, defs, exprs, declman);
+    if(exprs.size()) {
+      auto it = std::get_if<ee_expr_call>(&*exprs.rbegin());
+      if(it) {
+        it->store.reset();
+        // caveat: unused var.
+      }
+    }
   }
   else if(auto it = dcast<ast_stmt_subblock>(stmt); it) {
     eeyore_gen_block(*it->b, declman, defs, exprs,

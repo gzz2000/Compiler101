@@ -9,7 +9,7 @@ void yyerror(std::shared_ptr<ast_nodebase>, char const *err) {
   exit(1);
 }
 
-inline std::shared_ptr<ast_nodebase> read_source_ast(const char *fname) {
+std::shared_ptr<ast_compunit> read_source_ast(const char *fname) {
   yyin = fopen(fname, "r");
   if(!yyin) {
     perror("Error opening source file");
@@ -22,14 +22,4 @@ inline std::shared_ptr<ast_nodebase> read_source_ast(const char *fname) {
     perror("Syntax error returned from yyparse().");
   }
   return ret;
-}
-
-int main(int argc, char **argv) {
-  if(argc != 2) {
-    printf("Usage: %s <source_file>\n", argv[0]);
-    return 255;
-  }
-  auto ret = read_source_ast(argv[1]);
-  printf("Hello, World!\n");
-  return 0;
 }

@@ -4,6 +4,7 @@
 #include <optional>
 #include <variant>
 #include <vector>
+#include "utils.hpp"
 
 struct ee_base {
   // std::string comment;
