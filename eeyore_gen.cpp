@@ -156,8 +156,8 @@ ev_lval_ret eval_lval(const ast_lval &lval,
     // this expression generates an int reference.
     if(def->vals && (!index || std::get_if<int>(&index.value()))) {
       // constant. congrats.
-      int idx = (index ? std::get<int>(*index) : 0);
-      if(idx > (int)def->vals->size()) {
+      int idx = (index ? std::get<int>(*index) : 0) / 4;
+      if(idx >= (int)def->vals->size()) {
         egerror("Too large index when accessing a const array.");
       }
       return def->vals->operator[](idx);
@@ -371,6 +371,7 @@ ee_rval eval_exp(const ast_exp &exp,
             op.b = b;
             op.op = ops.first;
             op.numop = ops.second;
+            out_assigns.emplace_back(op);
             s.push(ee_rval(r));
           }
         }
@@ -644,7 +645,7 @@ void eeyore_gen_block(ast_block &block,
                       layered_store<g_def> &last_defs,
                       std::vector<ee_expr_types> &exprs,
                       int lbl_loop_st, int lbl_loop_ed) {
-  layered_store<g_def> defs(last_defs);
+  layered_store<g_def> defs(&last_defs);
   for(auto bi: block.items) {
     if(auto it = dcast<ast_def>(bi); it) {
       push_def<'T'>(defs, it, exprs, declman);
@@ -673,7 +674,7 @@ std::shared_ptr<ee_program> eeyore_gen(std::shared_ptr<ast_compunit> sysy) {
     ee_f.num_params = sysy_fdef->params.size();
     
     decl_symbol_manager func_declman(ee_f.decls, declman);
-    layered_store<g_def> defs_with_params(defs);
+    layered_store<g_def> defs_with_params(&defs);
     
     for(int i = 0; i < ee_f.num_params; ++i) {
       push_def<'p'>(defs_with_params, sysy_fdef->params[i], ee_f.exprs, func_declman);

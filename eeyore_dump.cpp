@@ -67,7 +67,7 @@ DEFOUT(const ee_expr_op &op) {
     out << op.sym << " = " << opname2str(op.op) << op.b << endl;
   }
   else {
-    out << op.sym << " = " << op.a << " " << opname2str(op.op) << op.b << endl;
+    out << op.sym << " = " << op.a << " " << opname2str(op.op) << " " << op.b << endl;
   }
   return out;
 }

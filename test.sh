@@ -24,7 +24,11 @@ for c in $cases; do
     else
         input=/dev/null
     fi
-    mon "program RE" ./minivm/build/minivm output.eeyore < $input > output.out
+    ./minivm/build/minivm output.eeyore < $input > output.out
+    ret=$?
+    #sed -i -e '$ s/\n*$/\n/g' output.out
+    #sed -i -e '$ s/^\n\n$/\n/g' output.out
+    echo >> output.out
     echo $ret >> output.out
-    mon "program WA" diff output.out "${c%.sy}.out"
+    mon "program WA" diff -B --ignore-all-space output.out "${c%.sy}.out"
 done
