@@ -260,7 +260,6 @@ ee_rval eval_exp(const ast_exp &exp,
                     }
                     else {
                       // fallback to the second op when we meet it.
-                      s.push(ee_rval(v));
                       sc_labels.emplace();
                     }
                   },
