@@ -7,10 +7,12 @@
 #include <variant>
 #include <iostream>
 
-void egerror(const char *str) {
+void egerror_print(const char *str, int lineno) {
   printf("Eeyore generation error: %s\n", str);
-  exit(3);
+  exit(lineno % 256);
 }
+
+#define egerror(str) egerror_print(str, __LINE__)
 
 int global_label_id = 0;
 
