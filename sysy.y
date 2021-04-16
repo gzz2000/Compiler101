@@ -210,6 +210,11 @@ InitVal
     std::move(dcast<ast_initvallist>($2)->list));
   $$ = r;
  }
+| OP_LBRACE OP_RBRACE {
+  auto r = make_shared<ast_initval>();
+  r->content.emplace<std::vector<std::shared_ptr<ast_initval>>>();
+  $$ = r;
+ }
 ;
 
 InitValList
