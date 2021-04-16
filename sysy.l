@@ -99,7 +99,7 @@
  /* invalid chars */
 . {
   /* yylval.error_char = yytext[0]; */
-  return SP_LEX_ERROR;
+  /* return SP_LEX_ERROR; */
 }
 
 %%
