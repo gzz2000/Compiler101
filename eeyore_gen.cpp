@@ -399,7 +399,10 @@ inline void process_initlist(int *dims, int sz_dims,
       },
       [&] (const std::vector<std::shared_ptr<ast_initval>> &v) {
         if(!sz_dims) {
-          egerror("Initializing a single number with an array.");
+          if(v.size() > 1) egerror("Initializing a single number with an array.");
+          // caveat: did not check multiple braces here.
+          process_initlist(dims, sz_dims, *v[0], store);
+          return;
         }
         std::vector<int> i_dec(sz_dims, 0);
         int i = 0;
