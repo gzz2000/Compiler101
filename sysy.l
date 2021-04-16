@@ -92,15 +92,14 @@
 ")" { return OP_RPAREN; }
 
  /* empty chars and comments */
-[ \t\n]+ {}
+[ \t\r\n]+ {}
 \/\/[^\n]*/\n {}
 \/\*([^\*]|\*[^\/])*\*?\*\/ {}
 
  /* invalid chars */
 . {
   /* yylval.error_char = yytext[0]; */
-  /* return SP_LEX_ERROR; */
-  exit(yytext[0]);
+  return SP_LEX_ERROR;
 }
 
 %%
