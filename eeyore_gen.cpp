@@ -246,7 +246,7 @@ ee_rval eval_exp(const ast_exp &exp,
                       s.push(ee_rval(!!v));
                       // jump over.
                       int c = 1;
-                      while(c) {
+                      do {
                         std::visit(overloaded{
                             [&] (std::shared_ptr<ast_exp_term>) {
                               ++c;
@@ -257,6 +257,7 @@ ee_rval eval_exp(const ast_exp &exp,
                           },
                           exp.rpn[++i]);
                       }
+                      while(c > 1);
                     }
                     else {
                       // fallback to the second op when we meet it.
