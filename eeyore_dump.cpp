@@ -1,5 +1,5 @@
 #include "sysy.hpp"
-#include "sysy.tab.h"
+#include "sysy.tab.hpp"
 #include "utils.hpp"
 #include "eeyore.hpp"
 #include <variant>

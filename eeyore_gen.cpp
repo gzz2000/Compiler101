@@ -1,5 +1,5 @@
 #include "sysy.hpp"
-#include "sysy.tab.h"
+#include "sysy.tab.hpp"
 #include "eeyore.hpp"
 #include <vector>
 #include <unordered_map>

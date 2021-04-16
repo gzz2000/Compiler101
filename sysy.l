@@ -4,7 +4,7 @@
 #include "sysy.hpp"
 #define YYSTYPE std::shared_ptr<ast_nodebase>
 
-#include "sysy.tab.h"
+#include "sysy.tab.hpp"
 %}
 
 %%

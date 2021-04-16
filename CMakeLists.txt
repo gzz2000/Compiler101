@@ -21,7 +21,7 @@ set(CMAKE_CXX_FLAGS_RELEASE "$ENV{CXXFLAGS} -O2 -Wall -Wextra")
 include_directories(${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_BINARY_DIR})
 
 bison_target(sysy_parser sysy.y ${CMAKE_CURRENT_BINARY_DIR}/sysy.tab.cpp
-  DEFINES_FILE ${CMAKE_CURRENT_BINARY_DIR}/sysy.tab.h
+  DEFINES_FILE ${CMAKE_CURRENT_BINARY_DIR}/sysy.tab.hpp
   COMPILE_FLAGS -Wcounterexamples)
 
 flex_target(sysy_lexer sysy.l ${CMAKE_CURRENT_BINARY_DIR}/sysy.lex.cpp)
