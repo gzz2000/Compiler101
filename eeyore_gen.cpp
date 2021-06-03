@@ -363,6 +363,90 @@ ee_rval eval_exp(const ast_exp &exp,
   }
 }
 
+void eeyore_cond_goto(const ast_exp &cond, bool inv, 
+                      decl_symbol_manager &declman,
+                      layered_store<g_def> &defs,
+                      std::vector<ee_expr_types> &exprs,
+                      int lbl, int lbl_fl = -1) {
+  // the adjacent two ops are inverse of each other.
+  // the first two must be eq, neq.
+  const static int lops[6] = {OP_EQ, OP_NEQ, OP_LT, OP_GE, OP_LE, OP_GT};
+
+  if(auto t_int = dynamic_cast<const ast_int_literal *>(&cond); t_int) {
+    if(inv ^ !!t_int->val) {
+      // uncond goto
+      exprs.push_back(ee_expr_goto(lbl));
+      return;
+    }
+    else return;
+  }
+  if(auto t_op = dynamic_cast<const ast_exp_op *>(&cond); t_op) {
+    // logic 2-op.
+    if(t_op->op == OP_LOR || t_op->op == OP_LAND) {
+      bool gen_lbl_fl = (lbl_fl == -1);
+      if(gen_lbl_fl) lbl_fl = ++global_label_id;
+      if(inv ^ (t_op->op == OP_LOR)) {   // de morgan's law here
+        eeyore_cond_goto(*t_op->a, inv, declman, defs, exprs, lbl, lbl_fl);
+        eeyore_cond_goto(*t_op->b, inv, declman, defs, exprs, lbl, lbl_fl);
+      }
+      else {
+        eeyore_cond_goto(*t_op->a, !inv, declman, defs, exprs, lbl_fl);
+        eeyore_cond_goto(*t_op->b, inv, declman, defs, exprs, lbl, lbl_fl);
+      }
+      if(gen_lbl_fl) exprs.push_back(ee_expr_label(lbl_fl));
+      return;
+    }
+
+    // logic 1-op.
+    if(t_op->numop == 1 && t_op->op == OP_NEG) {
+      eeyore_cond_goto(*t_op->a, !inv, declman, defs, exprs, lbl, lbl_fl);
+      return;
+    }
+
+    // relation op
+    int t = -1;
+    for(int i = 0; i < 6; ++i) if(t_op->op == lops[i]) t = i;
+    if(t != -1) {
+      ee_rval a = eval_exp(*t_op->a, defs, exprs, declman);
+      ee_rval b = eval_exp(*t_op->b, defs, exprs, declman);
+      if(std::get_if<int>(&a) && std::get_if<int>(&b)) {
+        ee_rval v = eval_exp(cond, defs, exprs, declman);
+        if(inv ^ !!std::get<int>(v)) {
+          // uncond goto
+          exprs.push_back(ee_expr_goto(lbl));
+          return;
+        }
+        else return;
+      }
+      
+      ee_expr_cond_goto cgo;
+      cgo.label_id = lbl;
+      cgo.a = a;
+      cgo.b = b;
+      cgo.lop = lops[t ^ inv];
+      cgo.label_id = lbl;
+      exprs.push_back(cgo);
+      return;
+    }
+  }
+  
+  ee_rval v = eval_exp(cond, defs, exprs, declman);
+  if(std::get_if<int>(&v)) {
+    if(inv ^ !!std::get<int>(v)) {
+      // uncond goto
+      exprs.push_back(ee_expr_goto(lbl));
+      return;
+    }
+    else return;
+  }
+  ee_expr_cond_goto cgo;
+  cgo.a = v;
+  cgo.b = 0;
+  cgo.lop = lops[inv ^ 1];
+  cgo.label_id = lbl;
+  exprs.push_back(cgo);
+}
+
 inline void process_initlist(int *dims, int sz_dims,
                              const ast_initval &init,
                              std::shared_ptr<ast_exp> *store) {
@@ -494,50 +578,11 @@ void eeyore_gen_block(ast_block &block,
                       std::vector<ee_expr_types> &exprs,
                       int lbl_loop_st, int lbl_loop_ed);
 
-// the adjacent two ops are inverse of each other.
-// the first two must be eq, neq.
-const static int lops[6] = {OP_EQ, OP_NEQ, OP_LT, OP_GE, OP_LE, OP_GT};
-
 void eeyore_gen_stmt(std::shared_ptr<ast_stmt> stmt,
                      decl_symbol_manager &declman,
                      layered_store<g_def> &defs,
                      std::vector<ee_expr_types> &exprs,
                      int lbl_loop_st, int lbl_loop_ed) {
-  auto make_cond_goto = [&] (ee_rval cond, bool inv, int lbl) {
-    std::visit(overloaded{
-        [&] (int c) {
-          // degenerated to unconditional
-          if((!!c) ^ inv) exprs.push_back(ee_expr_goto(lbl));
-        },
-        [&] (ee_symbol sym) {
-          // try to recover the last logical op (==, !=, >, <, >=, <=)
-          // this could help us save one instruction.
-          ee_expr_cond_goto cgo;
-          cgo.label_id = lbl;
-          if(!exprs.empty()) {
-            auto it = std::get_if<ee_expr_op>(&*exprs.rbegin());
-            if(it && it->sym == sym) {
-              int t = -1;
-              for(int i = 0; i < 6; ++i) if(it->op == lops[i]) t = i;
-              if(t >= 0) {
-                cgo.a = it->a;
-                cgo.b = it->b;
-                cgo.lop = lops[t ^ inv];
-                exprs.pop_back();
-                exprs.push_back(cgo);
-                // caveat: unused var.
-                return;
-              }
-            }
-          }
-          cgo.a = sym;
-          cgo.b = 0;
-          cgo.lop = lops[inv ^ 1];   // eq or neq.
-          exprs.push_back(cgo);
-        }
-      }, cond);
-  };
-  
   if(auto it = dcast<ast_stmt_assign>(stmt); it) {
     ev_lval_ret lvret = eval_lval(*it->l, defs, exprs, declman);
     ee_rval rval = eval_exp(*it->r, defs, exprs, declman);
@@ -574,10 +619,8 @@ void eeyore_gen_stmt(std::shared_ptr<ast_stmt> stmt,
   }
   else if(auto it = dcast<ast_stmt_if>(stmt); it) {
     int lbl_jo_then = ++global_label_id;
-    int lbl_jo_else;
-    if(it->exec_else) lbl_jo_else = ++global_label_id;
-    ee_rval cond = eval_exp(*it->cond, defs, exprs, declman);
-    make_cond_goto(cond, true, lbl_jo_then);
+    int lbl_jo_else = ++global_label_id;
+    eeyore_cond_goto(*it->cond, true, declman, defs, exprs, lbl_jo_then);
     eeyore_gen_stmt(it->exec, declman, defs, exprs,
                     lbl_loop_st, lbl_loop_ed);
     if(it->exec_else) exprs.push_back(ee_expr_goto(lbl_jo_else));
@@ -591,8 +634,7 @@ void eeyore_gen_stmt(std::shared_ptr<ast_stmt> stmt,
   else if(auto it = dcast<ast_stmt_while>(stmt); it) {
     int lbl_st = ++global_label_id, lbl_ed = ++global_label_id;
     exprs.push_back(ee_expr_label(lbl_st));
-    ee_rval cond = eval_exp(*it->cond, defs, exprs, declman);
-    make_cond_goto(cond, true, lbl_ed);
+    eeyore_cond_goto(*it->cond, true, declman, defs, exprs, lbl_ed);
     eeyore_gen_stmt(it->exec, declman, defs, exprs,
                     lbl_st, lbl_ed);
     exprs.push_back(ee_expr_goto(lbl_st));
