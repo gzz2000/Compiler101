@@ -148,12 +148,8 @@ struct ast_stmt_return: ast_stmt {
   inline ast_stmt_return(std::shared_ptr<ast_exp> _val): val(_val) {}
 };
 
-struct ast_unaryop: ast_nodebase {
-  int type;   // OP_ADD, OP_SUB, OP_NEG
-  std::shared_ptr<ast_unaryop> op;
-};
-
-struct ast_exp_term: ast_nodebase {};
+struct ast_exp: ast_nodebase {};
+struct ast_exp_term: ast_exp {};
 
 struct ast_lval: ast_exp_term {
   std::string name;
@@ -182,10 +178,7 @@ struct ast_funcrparams: ast_nodebase {  // intermediate only
   std::vector<std::shared_ptr<ast_exp>> params;
 };
 
-struct ast_exp: ast_nodebase {
-  // reverse polish notation
-  std::vector<std::variant<
-                std::shared_ptr<ast_exp_term>,  // expression terminal
-                std::pair<int, int /* #operands */> // operator
-                >> rpn;
+struct ast_exp_op: ast_exp {
+  int op, numop;
+  std::shared_ptr<ast_exp> a, b;
 };

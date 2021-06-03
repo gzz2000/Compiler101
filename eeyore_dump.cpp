@@ -65,7 +65,7 @@ DEFOUT(const ee_lval &lv) {
 DEFOUT(const ee_expr_op &op) {
   if(op.numop == 1) {
     if(op.op == OP_ADD) out << op.sym << " = " << op.b << endl;
-    else out << op.sym << " = " << opname2str(op.op) << op.b << endl;
+    else out << op.sym << " = " << opname2str(op.op) << op.a << endl;
   }
   else {
     out << op.sym << " = " << op.a << " " << opname2str(op.op) << " " << op.b << endl;

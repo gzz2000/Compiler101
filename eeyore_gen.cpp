@@ -7,6 +7,7 @@
 #include <variant>
 #include <iostream>
 
+__attribute__((noreturn))
 void egerror_print(const char *str, int lineno) {
   printf("Eeyore generation error: %s\n", str);
   exit(lineno % 256);
@@ -14,7 +15,7 @@ void egerror_print(const char *str, int lineno) {
 
 #define egerror(str) egerror_print(str, __LINE__)
 
-int global_label_id = 0;
+static int global_label_id = 0;
 
 struct g_def {
   std::vector<int> dims;
@@ -90,7 +91,7 @@ struct decl_symbol_manager {
 
 // eval_exp is the general expression evaluator.
 // if const, then it will eventually yield a number.
-// if not, the reverse polish notation is compiled along the way.
+// if not, it is compiled to a temp variable.
 
 ee_rval eval_exp(const ast_exp &exp,
                  const layered_store<g_def> &defs,
@@ -117,38 +118,64 @@ ev_lval_ret eval_lval(const ast_lval &lval,
     egerror("Too many dimensions in array reference.");
   }
 
-  std::optional<ee_rval> index;
+  ee_rval index = 0;
   if(lval.dims.size()) {
-    ast_exp pos_calc;
-    for(int j = 0; j < (int)lval.dims.size(); ++j) {
-      append_copy(pos_calc.rpn, lval.dims[j]->rpn);
-      if(j > 0) {
-        pos_calc.rpn.emplace_back(std::make_pair(OP_ADD, 2));
-      }
-      if(j < (int)lval.dims.size() - 1) {
-        pos_calc.rpn.emplace_back(std::make_shared<ast_int_literal>(def->dims[j + 1]));
-        pos_calc.rpn.emplace_back(std::make_pair(OP_MUL, 2));
-      }
+    std::vector<ee_rval> subindices(lval.dims.size());
+    int sz = 4;
+    for(int j = (int)def->dims.size() - 1; j >= (int)lval.dims.size(); --j) {
+      sz *= def->dims[j];
     }
-    int mulrem = 4;  // sizeof(int)
-    for(int j = lval.dims.size(); j < (int)def->dims.size(); ++j) {
-      mulrem *= def->dims[j];
+    for(int j = (int)lval.dims.size() - 1; j >= 0; --j) {
+      ast_exp_op op;
+      op.op = OP_MUL;
+      op.numop = 2;
+      op.a = std::make_shared<ast_int_literal>(sz);
+      op.b = lval.dims[j];
+      subindices[j] = eval_exp(op, defs, out_assigns, out_decls);
+      // reorder so that the constants are added first.
+      std::visit(overloaded{
+          [&] (int v) {
+            index = std::get<int>(index) + v;
+          },
+          [&] (ee_symbol) {}
+        }, subindices[j]);
+      sz *= def->dims[j];
     }
-    pos_calc.rpn.emplace_back(std::make_shared<ast_int_literal>(mulrem));
-    pos_calc.rpn.emplace_back(std::make_pair(OP_MUL, 2));
     
-    index = eval_exp(pos_calc, defs, out_assigns, out_decls);
+    // reorder so that the first dimensions are added first.
+    // this is for raising the computation outside.
+    for(int j = 0; j < (int)lval.dims.size(); ++j) {
+      std::visit(overloaded{
+          [&] (int) {},
+          [&] (ee_symbol sym) {
+            if(int *pvi = std::get_if<int>(&index); pvi && !*pvi) {
+              index = subindices[j];
+            }
+            else {
+              // construct add
+              ee_symbol r = out_decls.next<'t'>();
+              ee_expr_op op;
+              op.sym = r;
+              op.a = sym;
+              op.b = index;
+              op.op = OP_ADD;
+              op.numop = 2;
+              out_assigns.emplace_back(op);
+              index = r;
+            }
+          }
+        }, subindices[j]);
+    }
   }
-  
   if(lval.dims.size() < def->dims.size()) {
     // this expression generates a pointer.
-    if(!index) return def->sym;
+    if(int *pvi = std::get_if<int>(&index); pvi && !*pvi) return def->sym;
     // add
     ee_symbol r = out_decls.next<'t'>();
     ee_expr_op op;
     op.sym = r;
     op.a = def->sym;
-    op.b = *index;
+    op.b = index;
     op.op = OP_ADD;
     op.numop = 2;
     out_assigns.emplace_back(op);
@@ -156,9 +183,9 @@ ev_lval_ret eval_lval(const ast_lval &lval,
   }
   else {
     // this expression generates an int reference.
-    if(def->vals && (!index || std::get_if<int>(&index.value()))) {
+    if(def->vals && std::get_if<int>(&index)) {
       // constant. congrats.
-      int idx = (index ? std::get<int>(*index) : 0) / 4;
+      int idx = std::get<int>(index) / 4;
       if(idx >= (int)def->vals->size()) {
         egerror("Too large index when accessing a const array.");
       }
@@ -168,7 +195,7 @@ ev_lval_ret eval_lval(const ast_lval &lval,
       // we need a runtime access.
       ee_lval ret;
       ret.sym = def->sym;
-      ret.sym_idx = index;
+      if(def->dims.size()) ret.sym_idx = index;
       return ret;
     }
   }
@@ -178,213 +205,162 @@ ee_rval eval_exp(const ast_exp &exp,
                  const layered_store<g_def> &defs,
                  std::vector<ee_expr_types> &out_assigns,
                  decl_symbol_manager &out_decls) {
-  std::stack<ee_rval> s;
-  std::stack<std::optional<int /* label id */>> sc_labels;
-  
-  for(int i = 0; i < (int)exp.rpn.size(); ++i) {
-    std::visit(overloaded{
-        [&] (std::shared_ptr<ast_exp_term> term) {
-          if(auto t = dcast<ast_int_literal>(term); t) {
-            s.emplace(t->val);
-          }
-          else if(auto t = dcast<ast_funccall>(term); t) {
-            // push a function call
-            ee_expr_call call;
-            call.func = t->name;
-            call.params.reserve(t->params.size());
-            for(auto expp: t->params) {
-              call.params.push_back(
-                eval_exp(*expp, defs, out_assigns, out_decls));
+  if(dynamic_cast<const ast_exp_term *>(&exp)) {
+    if(auto t_int = dynamic_cast<const ast_int_literal *>(&exp); t_int) {
+      return t_int->val;
+    }
+    else if(auto t_fcall = dynamic_cast<const ast_funccall *>(&exp); t_fcall) {
+      // a function call
+      ee_expr_call call;
+      call.func = t_fcall->name;
+      call.params.reserve(t_fcall->params.size());
+      for(auto expp: t_fcall->params) {
+        call.params.push_back(
+          eval_exp(*expp, defs, out_assigns, out_decls));
+      }
+      ee_symbol sym = out_decls.next<'t'>();
+      call.store.emplace(sym);
+      out_assigns.push_back(call);
+      return sym;
+    }
+    else if(auto t_lval = dynamic_cast<const ast_lval *>(&exp); t_lval) {
+      ev_lval_ret lvret = eval_lval(*t_lval, defs, out_assigns, out_decls);
+      ee_rval ret;
+      std::visit(overloaded{
+          [&] (ee_symbol sym) {
+            // a pointer.
+            ret = sym;
+          },
+          [&] (ee_lval lv) {
+            // a runtime int reference.
+            if(lv.sym_idx) {
+              // we need one instruction to extract the array value.
+              ee_symbol r = out_decls.next<'t'>();
+              ee_expr_assign_arr op;
+              op.sym = r;
+              op.a = lv;
+              out_assigns.emplace_back(op);
+              ret = r;
             }
-            ee_symbol sym = out_decls.next<'t'>();
-            call.store.emplace(sym);
-            out_assigns.push_back(call);
-            s.push(sym);
+            else ret = lv.sym;
+          },
+          [&] (int v) {
+            // a constant
+            ret = v;
           }
-          else if(auto t = dcast<ast_lval>(term); t) {
-            ev_lval_ret lvret = eval_lval(*t, defs, out_assigns, out_decls);
-            std::visit(overloaded{
-                [&] (ee_symbol sym) {
-                  // a pointer.
-                  s.push(sym);
-                },
-                [&] (ee_lval lv) {
-                  // a runtime int reference.
-                  if(lv.sym_idx) {
-                    // we need one instruction to extract the array value.
-                    ee_symbol r = out_decls.next<'t'>();
-                    ee_expr_assign_arr op;
-                    op.sym = r;
-                    op.a = lv;
-                    out_assigns.emplace_back(op);
-                    s.push(r);
-                  }
-                  else s.push(lv.sym);
-                },
-                [&] (int v) {
-                  // a constant
-                  s.push(v);
-                }
-              }, lvret);
-          }
-          else {
-            egerror("Unhandled expterm: a bug within the compiler.");
-          }
-        },
-        
-        [&] (std::pair<int, int> ops) {
-          if(ops.first == OP_LAND || ops.first == OP_LOR) {
-            // special care: short circuit evaluation.
-            if(ops.second == 1) {
-              // middle tag
-              ee_rval a = s.top();
-              std::visit(overloaded{
-                  [&] (int v) {
-                    // the first part evaluated to constant.
-                    // we shall check if it determines the whole exp.
-                    if((ops.first == OP_LAND && !v) ||
-                       (ops.first == OP_LOR && v)) {
-                      s.pop();
-                      s.push(ee_rval(!!v));
-                      // jump over.
-                      int c = 1;
-                      do {
-                        std::visit(overloaded{
-                            [&] (std::shared_ptr<ast_exp_term>) {
-                              ++c;
-                            },
-                            [&] (std::pair<int, int> ops) {
-                              c = c - ops.second + 1;
-                            }
-                          },
-                          exp.rpn[++i]);
-                      }
-                      while(c > 1);
-                    }
-                    else {
-                      // fallback to the second op when we meet it.
-                      sc_labels.emplace();
-                    }
-                  },
-                  [&] (ee_symbol sym) {
-                    // the first part is up to runtime input.
-                    // generate a conditional jump.
-                    ee_expr_cond_goto cgo;
-                    cgo.a = sym;
-                    cgo.b = 0;
-                    cgo.lop = (ops.first == OP_LAND ? OP_EQ : OP_NEQ);
-                    cgo.label_id = ++global_label_id;
-                    out_assigns.emplace_back(cgo);
-                    sc_labels.emplace(cgo.label_id);
-                  }
-                },
-                a);
+        }, lvret);
+      return ret;
+    }
+    else {
+      egerror("Unhandled expterm: a bug within the compiler.");
+    }
+  }
+  else if(auto t_op = dynamic_cast<const ast_exp_op *>(&exp); t_op) {
+    if(t_op->op == OP_LOR || t_op->op == OP_LAND) {
+      ee_rval a = eval_exp(*t_op->a, defs, out_assigns, out_decls);
+      ee_rval ret;
+      std::visit(overloaded{
+          [&] (int v) {
+            // the first part evaluated to constant.
+            // we shall check if it determines the whole exp.
+            if((t_op->op == OP_LOR && v == 1) || (t_op->op == OP_LAND && v == 0)) {
+              ret = !!v;
             }
             else {
-              // end tag
-              ee_rval a, b;
-              b = s.top(); s.pop();
-              a = s.top(); s.pop();
-              std::optional<int> label_id = sc_labels.top();
-              sc_labels.pop();
-              // set the value as b.
-              auto put_assign = [&] (ee_symbol sym) {
-                // put the assign.
-                ee_expr_assign ea;
-                ea.lval.sym = sym;
-                ea.a = b;
-                out_assigns.emplace_back(ea);
-                // put the label.
-                if(label_id) {
-                  out_assigns.push_back(ee_expr_label(*label_id));
-                }
-                s.push(sym);
-              };
-              std::visit(overloaded{
-                  [&] (int) {   // constant, simplified
-                    if(auto it = std::get_if<int>(&b); it) {
-                      s.push(*it); // constant result
-                    }
-                    else {
-                      put_assign(out_decls.next<'t'>());
-                    }
-                  },
-                  [&] (ee_symbol real_sym) {
-                    put_assign(real_sym);
-                  }
-                },
-                a);
+              ret = eval_exp(*t_op->b, defs, out_assigns, out_decls);
             }
-            return;
+          },
+          [&] (ee_symbol sym) {
+            // the first part is up to runtime input.
+            // structure:  [t1 = a; ifAND(t1 == 0) exit; t2 = b; t1 = t2; exit:;]
+            ret = sym;
+            
+            // generate a conditional jump.
+            ee_expr_cond_goto cgo;
+            cgo.a = sym;
+            cgo.b = 0;
+            cgo.lop = (t_op->op == OP_LAND ? OP_EQ : OP_NEQ);
+            cgo.label_id = ++global_label_id;
+            out_assigns.emplace_back(cgo);
+
+            // generate second evaluation
+            ee_rval b = eval_exp(*t_op->b, defs, out_assigns, out_decls);
+            // generate back assignment
+            ee_expr_assign ea;
+            ea.lval.sym = sym;
+            ea.a = b;
+            out_assigns.emplace_back(ea);
+
+            // generate the end label
+            out_assigns.push_back(ee_expr_label(cgo.label_id));
           }
-          
-          ee_rval a(0), b(0);
-          b = s.top(); s.pop();
-          if(ops.second == 2) { a = s.top(); s.pop(); }
-          if(std::get_if<int>(&a) && std::get_if<int>(&b)) {
-            // constant. evaluate the result at compile time.
-            int na = std::get<int>(a), nb = std::get<int>(b), ans;
-            if(ops.second == 2) {
+        }, a);
+      return ret;
+    }
+    else {   // a normal operator
+      ee_rval a = eval_exp(*t_op->a, defs, out_assigns, out_decls);
+      ee_rval b(0);
+      if(t_op->numop == 2) b = eval_exp(*t_op->b, defs, out_assigns, out_decls);
+      if(std::get_if<int>(&a) && std::get_if<int>(&b)) {
+        // compile time evaluation
+        int na = std::get<int>(a), nb = std::get<int>(b), ans;
+        if(t_op->numop == 2) {
 #define P(name, op)                             \
-              case OP_##name:                   \
-                ans = (na op nb);               \
-                break;
-              switch(ops.first) {
-                // P(LOR, ||);
-                // P(LAND, &&);
-                P(EQ, ==);
-                P(NEQ, !=);
-                P(LT, <);
-                P(GT, >);
-                P(LE, <=);
-                P(GE, >=);
-                P(ADD, +);
-                P(SUB, -);
-                P(MUL, *);
-                P(DIV, /);
-                P(REM, %);
-              default:
-                egerror("unexpected 2-op when doing compile-time computation.");
-              }
-#undef P
-            }
-            else {
-#define P(name, op)                             \
-              case OP_##name:                   \
-                ans = (op nb);                  \
-                break;
-              switch(ops.first) {
-                P(ADD, +);
-                P(SUB, -);
-                P(NEG, !);
-              default:
-                egerror("unexpected 1-op when doing compile-time computation.");
-              }
-#undef P
-            }
-            s.push(ee_rval(ans));
+          case OP_##name:                       \
+            ans = (na op nb);                   \
+            break;
+          switch(t_op->op) {
+            // P(LOR, ||);
+            // P(LAND, &&);
+            P(EQ, ==);
+            P(NEQ, !=);
+            P(LT, <);
+            P(GT, >);
+            P(LE, <=);
+            P(GE, >=);
+            P(ADD, +);
+            P(SUB, -);
+            P(MUL, *);
+            P(DIV, /);
+            P(REM, %);
+          default:
+            egerror("unexpected 2-op when doing compile-time computation.");
           }
-          else {
-            // build an op to be executed at runtime.
-            ee_symbol r = out_decls.next<'t'>();
-            ee_expr_op op;
-            op.sym = r;
-            op.a = a;
-            op.b = b;
-            op.op = ops.first;
-            op.numop = ops.second;
-            out_assigns.emplace_back(op);
-            s.push(ee_rval(r));
-          }
+#undef P
         }
-      },
-      exp.rpn[i]);
+        else {
+#define P(name, op)                             \
+          case OP_##name:                       \
+            ans = (op na);                      \
+            break;
+          switch(t_op->op) {
+            P(ADD, +);
+            P(SUB, -);
+            P(NEG, !);
+          default:
+            egerror("unexpected 1-op when doing compile-time computation.");
+          }
+#undef P
+        }
+        return ans;
+      }
+      else {
+        // runtime op
+        ee_symbol r = out_decls.next<'t'>();
+        ee_expr_op op;
+        op.op = t_op->op;
+        op.numop = t_op->numop;
+        op.a = a;
+        op.b = b;
+        op.sym = r;
+        out_assigns.emplace_back(op);
+        return r;
+      }
+    }
   }
-  if(s.size() != 1) {
-    egerror("Unexpected stack size after RPN reduction. "
-            "This is a bug within the compiler.");
+  else {
+    egerror("Unhandled exptype: a bug within the compiler.");
   }
-  return s.top();
 }
 
 inline void process_initlist(int *dims, int sz_dims,

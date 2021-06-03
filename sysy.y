@@ -9,22 +9,20 @@ using std::make_shared;
 #define YYSTYPE std::shared_ptr<ast_nodebase>
 
 /* ltag: for support of short-circuit logical operators */
-#define concat_rpn2_ltag(ret, a, b, op) {        \
-    auto r = dcast<ast_exp>(a);                  \
-    r->rpn.emplace_back(std::make_pair(op, 1));  \
-    append_move(r->rpn, dcast<ast_exp>(b)->rpn); \
-    r->rpn.emplace_back(std::make_pair(op, 2));  \
+#define concat_op2(ret, aval, bval, optype) {    \
+    auto r = make_shared<ast_exp_op>();          \
+    r->op = optype;                              \
+    r->numop = 2;                                \
+    r->a = dcast<ast_exp>(aval);                 \
+    r->b = dcast<ast_exp>(bval);                 \
     ret = r;                                     \
   }
-#define concat_rpn2(ret, a, b, op) {             \
-    auto r = dcast<ast_exp>(a);                  \
-    append_move(r->rpn, dcast<ast_exp>(b)->rpn); \
-    r->rpn.emplace_back(std::make_pair(op, 2));  \
+#define concat_op1(ret, aval, optype) {          \
+    auto r = make_shared<ast_exp_op>();          \
+    r->op = optype;                              \
+    r->numop = 1;                                \
+    r->a = dcast<ast_exp>(aval);                 \
     ret = r;                                     \
-  }
-#define concat_rpn1(ret, a, op) {                                 \
-    ret = a;                                                      \
-    dcast<ast_exp>(ret)->rpn.emplace_back(std::make_pair(op, 1)); \
   }
 %}
 
@@ -409,7 +407,7 @@ LOrExp
   $$ = std::move($1);
  }
 | LOrExp OP_LOR LAndExp {
-  concat_rpn2_ltag($$, $1, $3, OP_LOR);
+  concat_op2($$, $1, $3, OP_LOR);
  }
 ;
 
@@ -418,7 +416,7 @@ LAndExp
   $$ = std::move($1);
  }
 | LAndExp OP_LAND EqExp {
-  concat_rpn2_ltag($$, $1, $3, OP_LAND);
+  concat_op2($$, $1, $3, OP_LAND);
  }
 ;
 
@@ -427,10 +425,10 @@ EqExp
   $$ = std::move($1);
  }
 | EqExp OP_EQ RelExp {
-  concat_rpn2($$, $1, $3, OP_EQ);
+  concat_op2($$, $1, $3, OP_EQ);
  }
 | EqExp OP_NEQ RelExp {
-  concat_rpn2($$, $1, $3, OP_NEQ);
+  concat_op2($$, $1, $3, OP_NEQ);
  }
 ;
 
@@ -439,16 +437,16 @@ RelExp
   $$ = std::move($1);
  }
 | RelExp OP_LT AddExp {
-  concat_rpn2($$, $1, $3, OP_LT);
+  concat_op2($$, $1, $3, OP_LT);
  }
 | RelExp OP_GT AddExp {
-  concat_rpn2($$, $1, $3, OP_GT);
+  concat_op2($$, $1, $3, OP_GT);
  }
 | RelExp OP_LE AddExp {
-  concat_rpn2($$, $1, $3, OP_LE);
+  concat_op2($$, $1, $3, OP_LE);
  }
 | RelExp OP_GE AddExp {
-  concat_rpn2($$, $1, $3, OP_GE);
+  concat_op2($$, $1, $3, OP_GE);
  }
 ;
 
@@ -457,10 +455,10 @@ AddExp
   $$ = std::move($1);
  }
 | AddExp OP_ADD MulExp {
-  concat_rpn2($$, $1, $3, OP_ADD);
+  concat_op2($$, $1, $3, OP_ADD);
  }
 | AddExp OP_SUB MulExp {
-  concat_rpn2($$, $1, $3, OP_SUB);
+  concat_op2($$, $1, $3, OP_SUB);
  }
 ;
 
@@ -469,30 +467,28 @@ MulExp
   $$ = std::move($1);
  }
 | MulExp OP_MUL UnaryExp {
-  concat_rpn2($$, $1, $3, OP_MUL);
+  concat_op2($$, $1, $3, OP_MUL);
  }
 | MulExp OP_DIV UnaryExp {
-  concat_rpn2($$, $1, $3, OP_DIV);
+  concat_op2($$, $1, $3, OP_DIV);
  }
 | MulExp OP_REM UnaryExp {
-  concat_rpn2($$, $1, $3, OP_REM);
+  concat_op2($$, $1, $3, OP_REM);
  }
 ;
 
 UnaryExp
 : TerminalExp {
-  auto r = make_shared<ast_exp>();
-  r->rpn.push_back(dcast<ast_exp_term>($1));
-  $$ = r;
+  $$ = std::move($1);
  }
 | OP_ADD UnaryExp {
-  concat_rpn1($$, $2, OP_ADD);
+  concat_op1($$, $2, OP_ADD);
  }
 | OP_SUB UnaryExp {
-  concat_rpn1($$, $2, OP_SUB);
+  concat_op1($$, $2, OP_SUB);
  }
 | OP_NEG UnaryExp {
-  concat_rpn1($$, $2, OP_NEG);
+  concat_op1($$, $2, OP_NEG);
  }
 | OP_LPAREN Exp OP_RPAREN {
   $$ = std::move($2);
