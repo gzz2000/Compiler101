@@ -58,7 +58,7 @@ DEFOUT(tg_expr_call) {
 
 DEFOUT(tg_expr_ret) {
   (void)t;
-  return out << "ret" << endl;
+  return out << "return" << endl;
 }
 
 DEFOUT(tg_expr_stack_store) {

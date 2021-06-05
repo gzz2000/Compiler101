@@ -2,9 +2,12 @@
 #include "eeyore_analysis.hpp"
 #include <queue>
 
-ee_dataflow::ee_dataflow(const ee_funcdef &eef) {
+ee_dataflow::ee_dataflow(const ee_funcdef &eef)
+  : n_exprs((int)eef.exprs.size()),
+    e_in(n_exprs), e_out(n_exprs), loopcnt(n_exprs + 1, 0),
+    n_decls(0)
+{
   // build map label_id -> pos
-  n_exprs = (int)eef.exprs.size();
   for(int i = 0; i < n_exprs; ++i) {
     if(auto c = std::get_if<ee_expr_label>(&eef.exprs[i]); c) {
       label2pos[c->label_id] = i;
@@ -12,8 +15,6 @@ ee_dataflow::ee_dataflow(const ee_funcdef &eef) {
   }
   
   // build e_in and e_out
-  e_in.resize(n_exprs);
-  e_out.resize(n_exprs);
   for(int i = 0; i < n_exprs; ++i) {
     if(auto c = std::get_if<ee_expr_goto>(&eef.exprs[i]); c) {
       e_in[c->label_id].push_back(i);
@@ -30,6 +31,17 @@ ee_dataflow::ee_dataflow(const ee_funcdef &eef) {
     }
   }
 
+  // count loop for heuristics
+  for(int i = 0; i < n_exprs; ++i) {
+    for(int j: e_out[i]) {
+      if(j < i) {
+        ++loopcnt[j];
+        --loopcnt[i + 1];
+      }
+    }
+  }
+  for(int i = 1; i <= n_exprs; ++i) loopcnt[i] += loopcnt[i - 1];
+
   // build symbol list
   for(int i = 0; i < eef.num_params; ++i) {
     sym2id[ee_symbol{'p', i}] = n_decls++;
@@ -43,7 +55,7 @@ void ee_dataflow::bfs_back(int start, std::function<bool(int)> foo) {
   if(foo(start)) return;
   std::queue<int> q;
   q.push(start);
-  while(true) {
+  while(!q.empty()) {
     int u = q.front(); q.pop();
     for(int v: e_in[u]) {
       if(foo(v)) continue;

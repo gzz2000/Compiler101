@@ -7,10 +7,10 @@
 
 struct ee_dataflow {
   // per instruction
-  int n_exprs;
+  int n_exprs = 0;
   std::unordered_map<int, int> label2pos;
-  std::vector<int> loopcnt;
   std::vector<std::vector<int>> e_in, e_out;
+  std::vector<int> loopcnt;
 
   // per symbol
   int n_decls;

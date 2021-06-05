@@ -14,6 +14,7 @@ struct cstat_type {
   int stackpos = -1;
   int size;
   int color = -1;    // -1 means {uncolored, spilled}
+  bool is_array = false;
 };
 
 tg_funcdef tigger_func_gen(const ee_funcdef &eef) {
@@ -29,11 +30,17 @@ tg_funcdef tigger_func_gen(const ee_funcdef &eef) {
   //   there is no "splitting" available.
   //   this is for easy implementation.
 
-  std::vector<cstat_type> cstats(df.n_exprs);
+  std::vector<cstat_type> cstats(df.n_decls);
+
+  // tag the arrays, so that they are not colored
+  for(const auto &decl: eef.decls) {
+    int t = df.s2i(decl.sym);
+    if(decl.size) cstats[t].is_array = true;
+  }
 
   // build interference graph
   // compute load-use relations
-  std::vector<std::vector<int>> active_vars;
+  std::vector<std::vector<int>> active_vars(df.n_exprs);
   for(int i = 0; i < df.n_exprs; ++i) {
     const auto proc_use_sym = [&] (ee_symbol sym) {
       int symid = df.s2i(sym);
@@ -99,7 +106,7 @@ tg_funcdef tigger_func_gen(const ee_funcdef &eef) {
 
   // materialize the relation
   std::vector<std::set<int>> interf(df.n_decls), interf_tmp;
-  for(int i = 0; i < df.n_exprs; ++i) {
+  for(int i = 0; i < df.n_decls; ++i) {
     for(int j = 0; j < (int)active_vars[i].size(); ++j) {
       for(int k = j + 1; k < (int)active_vars[i].size(); ++k) {
         int a = active_vars[i][j], b = active_vars[i][k];
@@ -113,7 +120,8 @@ tg_funcdef tigger_func_gen(const ee_funcdef &eef) {
   // color the graph and tag all spills
   constexpr int max_colors = 25;   // 27 - 2
   const auto comp_by_loopcnt = [&] (int a, int b) {
-    return df.loopcnt[a] < df.loopcnt[b];
+    if(df.loopcnt[a] != df.loopcnt[b]) return df.loopcnt[a] < df.loopcnt[b];
+    else return a < b;
   };
   std::set<int, decltype(comp_by_loopcnt)> remaining(comp_by_loopcnt);
   std::stack<int> pend;
@@ -139,6 +147,8 @@ tg_funcdef tigger_func_gen(const ee_funcdef &eef) {
   }
   while(!pend.empty()) {
     int u = pend.top(); pend.pop();
+    if(cstats[u].is_array) continue;  // do not assign register to an array
+    // todo: need to optimize: loadaddr can be reused.
     bool adj[max_colors] = {};
     for(int v: interf[u]) {
       if(cstats[v].color != -1) adj[cstats[v].color] = true;
