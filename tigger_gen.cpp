@@ -115,7 +115,7 @@ tg_funcdef tigger_func_gen(const ee_funcdef &eef) {
   const auto comp_by_loopcnt = [&] (int a, int b) {
     return df.loopcnt[a] < df.loopcnt[b];
   };
-  std::set<int, typeof(comp_by_loopcnt)> remaining(comp_by_loopcnt);
+  std::set<int, decltype(comp_by_loopcnt)> remaining(comp_by_loopcnt);
   std::stack<int> pend;
   for(int i = 0; i < df.n_decls; ++i) {
     remaining.insert(i);
