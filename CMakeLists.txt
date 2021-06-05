@@ -28,4 +28,9 @@ flex_target(sysy_lexer sysy.l ${CMAKE_CURRENT_BINARY_DIR}/sysy.lex.cpp)
 
 add_flex_bison_dependency(sysy_lexer sysy_parser)
 
-add_executable(sysy_eeyore ${BISON_sysy_parser_OUTPUTS} ${FLEX_sysy_lexer_OUTPUTS} sysy_bridge.cpp eeyore_gen.cpp main_sysy2eeyore.cpp eeyore_dump.cpp)
+add_executable(sysy_eeyore
+  ${BISON_sysy_parser_OUTPUTS} ${FLEX_sysy_lexer_OUTPUTS} sysy_bridge.cpp
+  main.cpp
+  eeyore_gen.cpp eeyore_dump.cpp
+  eeyore_analysis.cpp
+  tigger_gen.cpp tigger_dump.cpp)

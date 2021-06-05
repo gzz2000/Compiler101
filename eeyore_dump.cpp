@@ -2,13 +2,14 @@
 #include "sysy.tab.hpp"
 #include "utils.hpp"
 #include "eeyore.hpp"
+#include "utils_dump.hpp"
 #include <variant>
 #include <iostream>
 
 using std::endl;
 
 #define DEFOUT(def) \
-  std::ostream &operator << (std::ostream &out, def)
+  inline std::ostream &operator << (std::ostream &out, def)
 
 DEFOUT(const ee_symbol &sym) {
   out << sym.type << sym.id;
@@ -23,29 +24,9 @@ DEFOUT(const ee_decl &decl) {
 
 DEFOUT(const std::vector<ee_decl> &decls) {
   for(const ee_decl &decl: decls) {
-    out << decl;
+    out << "  " << decl;
   }
   return out;
-}
-
-inline const char *opname2str(int op) {
-  switch(op) {
-  case OP_ADD: return "+";
-  case OP_SUB: return "-";
-  case OP_MUL: return "*";
-  case OP_DIV: return "/";
-  case OP_REM: return "%";
-  case OP_NEG: return "!";
-  case OP_LOR: return "||";
-  case OP_LAND: return "&&";
-  case OP_EQ: return "==";
-  case OP_NEQ: return "!=";
-  case OP_LT: return "<";
-  case OP_GT: return ">";
-  case OP_LE: return "<=";
-  case OP_GE: return ">=";
-  default: return "???";
-  }
 }
 
 DEFOUT(const ee_rval &rv) {
@@ -118,9 +99,13 @@ DEFOUT(const ee_funcdef &fdef) {
   out << fdef.decls;
   out << endl;
   for(const ee_expr_types &expr: fdef.exprs) {
-    std::visit(
-      [&] (const auto &expr_t) {
-        out << expr_t;
+    std::visit(overloaded{
+        [&] (const ee_expr_label &lbl) {
+          out << lbl;
+        },
+        [&] (const auto &expr_t) {
+          out << "  " << expr_t;
+        }
       }, expr);
   }
   out << "end f_" << fdef.name << endl;

@@ -20,6 +20,15 @@ inline bool operator == (ee_symbol a, ee_symbol b) {
   return a.type == b.type && a.id == b.id;
 }
 
+namespace std {
+template <>
+struct hash<ee_symbol> {
+  inline std::size_t operator () (ee_symbol sym) const {
+    return std::size_t(sym.id) * 256 + sym.type;
+  }
+};
+}
+
 struct ee_decl: ee_base {
   ee_symbol sym;
   std::optional<int> size;
