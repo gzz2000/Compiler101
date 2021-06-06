@@ -22,7 +22,7 @@ function mon {
     ret=$?
     if [ $ret -ne 0 ]; then
         echo "$1. returned value is $ret"
-        #exit $ret
+        exit $ret
     fi
 }
 

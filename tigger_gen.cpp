@@ -143,10 +143,6 @@ tg_funcdef tigger_func_gen(
     if(t == -1) return;
     suggest_reg[t] = reg;
   };
-  // for input parameters
-  for(int i = 0; i < tgf.num_params; ++i) {
-    match_palette(ee_symbol{'p', i}, 20 + i /* ai */);
-  }
   // for function calls (parameter, return value) and ret
   int cnt_fcalls = 0;
   for(const auto &expr: eef.exprs) {
@@ -168,6 +164,13 @@ tg_funcdef tigger_func_gen(
           match_palette(*q, 20);
         }
       }
+    }
+  }
+  // for input parameters, if there is no function call.
+  // (if there is function call, this will cause redundant save/restore)
+  if(!cnt_fcalls) {
+    for(int i = 0; i < tgf.num_params; ++i) {
+      match_palette(ee_symbol{'p', i}, 20 + i /* ai */);
     }
   }
   
@@ -416,6 +419,49 @@ tg_funcdef tigger_func_gen(
     return std::make_pair(ret_reg, ret_num);
   };
 
+  // cycle_param_rearrange: general abstraction of parameter arrangement.
+  // on entering the function and storing the parameters to right place,
+  // and on calling a next function with parameters to be filled,
+  // we need to rearrange the parameters from/to a0--a7 to/from
+  // their allocated palette[color[]].
+  // this is nontrivial because we may need to permute some of them in-situ,
+  // and this is implemented below as a cycle-checking subroutine.
+  const auto cycle_param_rearrange = [&] (
+    int n, auto &&f_pos, auto &&f_brk, auto &&f_nrm, auto &&f_rst)
+  {
+    int storing[10] = {};
+    int status[10] = {};
+    bool broke_here[10] = {};
+    for(int i = 0; i < 10; ++i) storing[i] = -1;
+    for(int i = 0; i < n; ++i) {
+      f_pos(storing, i);
+    }
+    const auto put = [&] (int i, auto &&put) {
+      status[i] = 1;
+      if(storing[i] == i) {
+        status[i] = 2;
+        return;
+      }
+      int coinc = storing[i];
+      if(coinc != -1 && status[coinc] == 0) {
+        put(coinc, put);
+      }
+      if(coinc != -1 && status[coinc] == 1) {
+        // break cycle.
+        f_brk(coinc, i);
+        broke_here[coinc] = true;
+        coinc = -1;
+      }
+      assert(coinc == -1 || status[coinc] == 2);
+      if(broke_here[i]) f_rst(i);
+      else f_nrm(i);
+      status[i] = 2;
+    };
+    for(int i = 0; i < n; ++i) {
+      if(!status[i]) put(i, put);
+    }
+  };
+
   // code generation
 
   // store used s0--s11
@@ -425,9 +471,29 @@ tg_funcdef tigger_func_gen(
   }
 
   // store spilled params: a0--a7
-  for(int i = 0; i < tgf.num_params; ++i) {
-    save_val_from(ee_symbol{'p', i}, tg_reg{20 + i});
-  }
+  cycle_param_rearrange(
+    tgf.num_params,
+    [&] (int *storing, int i) {
+      int t = df.s2i(ee_symbol{'p', i});
+      if(cstats[t].color != -1) {
+        int r = palette[cstats[t].color];
+        if(r >= 20 && r < 20 + tgf.num_params) storing[i] = r - 20;
+      }
+    },
+    [&] (int coinc, int i) {
+      (void)i;
+      tgf.exprs.push_back(
+        tg_expr_assign_c{tg_reg{13}, tg_reg{20 + coinc}});
+    },
+    [&] (int i) {
+      save_val_from(ee_symbol{'p', i}, tg_reg{20 + i});
+    },
+    [&] (int i) {
+      save_val_from(ee_symbol{'p', i}, tg_reg{13});
+    });
+  // for(int i = 0; i < tgf.num_params; ++i) {
+  //   save_val_from(ee_symbol{'p', i}, tg_reg{20 + i});
+  // }
 
   // translate expressions one by one
   for(int i = 0; i < df.n_exprs; ++i) {
@@ -557,48 +623,30 @@ tg_funcdef tigger_func_gen(
           // arrange params
           // recursive, loop-breaking
           assert(e.params.size() <= 8);
-          int storing_param[max_colors + 5] = {};
-          for(int i = 0; i < max_colors + 5; ++i) storing_param[i] = -1;
-          for(int i = 0; i < (int)e.params.size(); ++i) {
-            if(auto p = std::get_if<ee_symbol>(&e.params[i]); p) {
-              int t = df.s2i(*p);
-              if(t != -1 && cstats[t].color != -1) {
-                storing_param[palette[cstats[t].color]] = i;
+          cycle_param_rearrange(
+            (int)e.params.size(),
+            [&] (int *storing, int i) {
+              if(auto p = std::get_if<ee_symbol>(&e.params[i]); p) {
+                int t = df.s2i(*p);
+                if(t != -1 && cstats[t].color != -1) {
+                  int color = palette[cstats[t].color];
+                  if(color >= 20 && color < 20 + (int)e.params.size())
+                    storing[color - 20] = i;
+                }
               }
-            }
-          }
-          int status_onstack[10] = {};  // 1: on stack; 2: done
-          bool broke_cycle_here[10] = {};
-          const auto put_param = [&] (int i, auto &&put_param) {
-            status_onstack[i] = 1;
-            if(storing_param[20 + i] == i) {
-              status_onstack[i] = 2;
-              return;
-            }
-            int coinc = storing_param[20 + i];
-            if(coinc != -1 && status_onstack[coinc] == 0) {
-              put_param(coinc, put_param);
-            }
-            if(coinc != -1 && status_onstack[coinc] == 1) {
-              // break cycle.
+            },
+            [&] (int coinc, int i) {
+              (void)coinc;
               tgf.exprs.push_back(
                 tg_expr_assign_c{tg_reg{13}, tg_reg{20 + i}});
-              broke_cycle_here[coinc] = true;   // sentry for coinc
-              coinc = -1;
-            }
-            assert(coinc == -1 || status_onstack[coinc] == 2);
-            if(broke_cycle_here[i]) {
+            },
+            [&] (int i) {
+              load_rval_to(e.params[i], tg_reg{20 + i});
+            },
+            [&] (int i) {
               tgf.exprs.push_back(
                 tg_expr_assign_c{tg_reg{20 + i}, tg_reg{13}});
-            }
-            else {
-              load_rval_to(e.params[i], tg_reg{20 + i});
-            }
-            status_onstack[i] = 2;
-          };
-          for(int i = 0; i < (int)e.params.size(); ++i) {
-            if(!status_onstack[i]) put_param(i, put_param);
-          }
+            });
           
           // call and save return value
           tgf.exprs.push_back(tg_expr_call{e.func});

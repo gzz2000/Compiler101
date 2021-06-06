@@ -4,3 +4,5 @@ output.*
 
 minivm/
 open-test-cases/
+
+local/
