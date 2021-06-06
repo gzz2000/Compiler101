@@ -17,13 +17,13 @@ ee_dataflow::ee_dataflow(const ee_funcdef &eef)
   // build e_in and e_out
   for(int i = 0; i < n_exprs; ++i) {
     if(auto c = std::get_if<ee_expr_goto>(&eef.exprs[i]); c) {
-      e_in[c->label_id].push_back(i);
-      e_out[i].push_back(c->label_id);
+      e_in[label2pos[c->label_id]].push_back(i);
+      e_out[i].push_back(label2pos[c->label_id]);
       continue;
     }
     if(auto c = std::get_if<ee_expr_cond_goto>(&eef.exprs[i]); c) {
-      e_in[c->label_id].push_back(i);
-      e_out[i].push_back(c->label_id);
+      e_in[label2pos[c->label_id]].push_back(i);
+      e_out[i].push_back(label2pos[c->label_id]);
     }
     if(i + 1 < (int)eef.exprs.size()) {
       e_in[i + 1].push_back(i);

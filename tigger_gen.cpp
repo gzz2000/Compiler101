@@ -17,7 +17,10 @@ struct cstat_type {
   bool is_array = false;
 };
 
-tg_funcdef tigger_func_gen(const ee_funcdef &eef) {
+tg_funcdef tigger_func_gen(
+  const ee_funcdef &eef,
+  const std::unordered_map<int, std::optional<int>> &global_decl_map)
+{
   tg_funcdef tgf;
   tgf.name = eef.name;
   tgf.num_params = eef.num_params;
@@ -41,6 +44,8 @@ tg_funcdef tigger_func_gen(const ee_funcdef &eef) {
   // build interference graph
   // compute load-use relations
   std::vector<std::vector<int>> active_vars(df.n_exprs);
+  std::vector<bool> expr_used(df.n_exprs);
+  
   for(int i = 0; i < df.n_exprs; ++i) {
     const auto proc_use_sym = [&] (ee_symbol sym) {
       int symid = df.s2i(sym);
@@ -65,7 +70,10 @@ tg_funcdef tigger_func_gen(const ee_funcdef &eef) {
             },
             [] (ee_expr_ret) {}
           }, eef.exprs[j]);
-        if(assign == symid) return true;
+        if(assign == symid) {
+          expr_used[j] = true;
+          if(i != j) return true;
+        }
         for(int oid: active_vars[j]) if(oid == symid) return true;
         active_vars[j].push_back(symid);
         return false;
@@ -83,10 +91,14 @@ tg_funcdef tigger_func_gen(const ee_funcdef &eef) {
           pu(e.b);
         },
         [&] (ee_expr_assign e) {
-          if(e.lval.sym_idx) pu(*e.lval.sym_idx);
+          if(e.lval.sym_idx) {
+            pu(e.lval.sym);
+            pu(*e.lval.sym_idx);
+          }
           pu(e.a);
         },
         [&] (ee_expr_assign_arr e) {
+          pu(e.a.sym);
           pu(*e.a.sym_idx);
         },
         [&] (ee_expr_cond_goto e) {
@@ -106,7 +118,7 @@ tg_funcdef tigger_func_gen(const ee_funcdef &eef) {
 
   // materialize the relation
   std::vector<std::set<int>> interf(df.n_decls), interf_tmp;
-  for(int i = 0; i < df.n_decls; ++i) {
+  for(int i = 0; i < df.n_exprs; ++i) {
     for(int j = 0; j < (int)active_vars[i].size(); ++j) {
       for(int k = j + 1; k < (int)active_vars[i].size(); ++k) {
         int a = active_vars[i][j], b = active_vars[i][k];
@@ -117,14 +129,56 @@ tg_funcdef tigger_func_gen(const ee_funcdef &eef) {
   }
   interf_tmp = interf;
 
-  // color the graph and tag all spills
+  // initialize coloring heuristics
   constexpr int max_colors = 25;   // 27 - 2
+  int palette[max_colors] = {};
+  int reg_to_color[max_colors + 5] = {};
+  std::unordered_map<int, int> suggest_reg;
+
+  for(int i = 0; i < max_colors; ++i) palette[i] = -2;
+  for(int i = 0; i < max_colors + 5; ++i) reg_to_color[i] = -1;
+  
+  const auto match_palette = [&] (ee_symbol sym, int reg) {
+    int t = df.s2i(sym);
+    if(t == -1) return;
+    suggest_reg[t] = reg;
+  };
+  // for input parameters
+  for(int i = 0; i < tgf.num_params; ++i) {
+    match_palette(ee_symbol{'p', i}, 20 + i /* ai */);
+  }
+  // for function calls (parameter, return value) and ret
+  int cnt_fcalls = 0;
+  for(const auto &expr: eef.exprs) {
+    if(auto p = std::get_if<ee_expr_call>(&expr); p) {
+      ++cnt_fcalls;
+      if(p->store) {
+        match_palette(*p->store, 20);
+      }
+      assert(p->params.size() <= 8);
+      for(int i = 0; i < (int)p->params.size(); ++i) {
+        if(auto q = std::get_if<ee_symbol>(&p->params[i]); q) {
+          match_palette(*q, 20 + i);
+        }
+      }
+    }
+    else if(auto p = std::get_if<ee_expr_ret>(&expr); p) {
+      if(p->val) {
+        if(auto q = std::get_if<ee_symbol>(&*p->val); q) {
+          match_palette(*q, 20);
+        }
+      }
+    }
+  }
+  
+  // color the graph according to heuristics, and tag all spills
   const auto comp_by_loopcnt = [&] (int a, int b) {
     if(df.loopcnt[a] != df.loopcnt[b]) return df.loopcnt[a] < df.loopcnt[b];
     else return a < b;
   };
   std::set<int, decltype(comp_by_loopcnt)> remaining(comp_by_loopcnt);
   std::stack<int> pend;
+  
   for(int i = 0; i < df.n_decls; ++i) {
     remaining.insert(i);
   }
@@ -159,50 +213,22 @@ tg_funcdef tigger_func_gen(const ee_funcdef &eef) {
         break;
       }
     }
+    if(cstats[u].color == -1) continue; // spilled
+    if(auto p = suggest_reg.find(u); p != suggest_reg.end()) {
+      int sr = p->second;
+      if(reg_to_color[sr] == -1) {
+        while(adj[cstats[u].color] || palette[cstats[u].color] != -2)
+          ++cstats[u].color;
+        assert(cstats[u].color < max_colors);
+        reg_to_color[sr] = cstats[u].color;
+        palette[cstats[u].color] = sr;
+      }
+      else if(!adj[reg_to_color[sr]]) {
+        cstats[u].color = reg_to_color[sr];
+      }
+    }
   }
 
-  // map color aliases to real colors, by heuristics.
-  int palette[max_colors] = {};
-  bool reg_used[max_colors + 5] = {};
-  for(int i = 0; i < df.n_decls; ++i) {
-    if(cstats[i].color != -1) palette[cstats[i].color] = -1;
-  }
-  const auto match_palette = [&] (ee_symbol sym, int reg) {
-    int t = df.s2i(sym);
-    if(t == -1) return;
-    if(cstats[t].color != -1 && palette[cstats[t].color] == -1 &&
-       !reg_used[reg]) {
-      reg_used[reg] = true;
-      palette[cstats[t].color] = reg;
-    }
-  };
-  // for input parameters
-  for(int i = 0; i < tgf.num_params; ++i) {
-    match_palette(ee_symbol{'p', i}, 20 + i /* ai */);
-  }
-  // for function calls (parameter, return value) and ret
-  int cnt_fcalls = 0;
-  for(const auto &expr: eef.exprs) {
-    if(auto p = std::get_if<ee_expr_call>(&expr); p) {
-      ++cnt_fcalls;
-      if(p->store) {
-        match_palette(*p->store, 20);
-      }
-      assert(p->params.size() <= 8);
-      for(int i = 0; i < (int)p->params.size(); ++i) {
-        if(auto q = std::get_if<ee_symbol>(&p->params[i]); q) {
-          match_palette(*q, 20 + i);
-        }
-      }
-    }
-    else if(auto p = std::get_if<ee_expr_ret>(&expr); p) {
-      if(p->val) {
-        if(auto q = std::get_if<ee_symbol>(&*p->val); q) {
-          match_palette(*q, 20);
-        }
-      }
-    }
-  }
   // match all other registers arbitrarilly.
   // available:
   //   s0 s1 s2 s3 s4 s5 s6 s7 s8 s9 s10 s11;
@@ -210,11 +236,15 @@ tg_funcdef tigger_func_gen(const ee_funcdef &eef) {
   //   a0 a1 a2 a3 a4 a5 a6 a7;
   // if #fcalls is 0, we would like to use t2--t6, a0--a7 more frequently.
   // else, we would use s0--s11 more frequently.
+  for(int i = 0; i < df.n_decls; ++i) {
+    if(cstats[i].color != -1 && palette[cstats[i].color] == -2)
+      palette[cstats[i].color] = -1;
+  }
   const auto match_rest = [&] (int regl, int regr) {
-    for(int r = regl; r <= regr; ++r) if(!reg_used[r]) {
+    for(int r = regl; r <= regr; ++r) if(reg_to_color[r] == -1) {
         for(int i = 0; i < max_colors; ++i) if(palette[i] == -1) {
             palette[i] = r;
-            reg_used[r] = true;
+            reg_to_color[r] = i;
             break;
           }
       }
@@ -232,7 +262,7 @@ tg_funcdef tigger_func_gen(const ee_funcdef &eef) {
   // for t2--t6 and a0--a7, they need to be stored upon each function call.
   //   range: active_vars \ params (to check?)
   // for s0--s11, they should be stored on enter and on exit
-  //   range: reg_used[].
+  //   range: used reg: reg_to_color[i] != -1.
 
   // allocate space on stack
   // for parameters
@@ -244,10 +274,10 @@ tg_funcdef tigger_func_gen(const ee_funcdef &eef) {
   // for registers
   int reg_stackpos[max_colors + 5] = {};
   for(int i = 1; i <= 12; ++i) {   // s0--s11
-    if(reg_used[i]) reg_stackpos[i] = tgf.size_stack++;
+    if(reg_to_color[i] != -1) reg_stackpos[i] = tgf.size_stack++;
   }
   if(cnt_fcalls) for(int i = 15; i <= 27; ++i) {  // t2--t6, a0--a7
-      if(reg_used[i]) reg_stackpos[i] = tgf.size_stack++;
+      if(reg_to_color[i] != -1) reg_stackpos[i] = tgf.size_stack++;
     }
   // for variables
   for(const auto &decl: eef.decls) {
@@ -267,10 +297,16 @@ tg_funcdef tigger_func_gen(const ee_funcdef &eef) {
   const auto load_val = [&] (ee_symbol sym, tg_reg tmp) {
     int t = df.s2i(sym);
     if(t == -1) {   // global var
-      tgf.exprs.push_back(tg_expr_global_load{sym.id, tmp});
+      auto p = global_decl_map.find(sym.id);
+      assert(p != global_decl_map.end());
+      if(p->second) tgf.exprs.push_back(tg_expr_global_loadaddr{sym.id, tmp});
+      else tgf.exprs.push_back(tg_expr_global_load{sym.id, tmp});
       return tmp;
     }
-    assert(cstats[t].size == 1);
+    if(cstats[t].is_array) { // stack pointer
+      tgf.exprs.push_back(tg_expr_stack_loadaddr{cstats[t].stackpos, tmp});
+      return tmp;
+    }
     if(cstats[t].color != -1) return tg_reg{palette[cstats[t].color]};
     tgf.exprs.push_back(tg_expr_stack_load{cstats[t].stackpos, tmp});
     return tmp;
@@ -338,47 +374,67 @@ tg_funcdef tigger_func_gen(const ee_funcdef &eef) {
     save_val_apply(sym, val);
   };
   
-  // load_addr: load the address of lvalue @lv into @to,
+  // load_addr: load the address of lvalue @lv into suggested @to,
   //   with scratch space suggested @tmp.
-  // @return NUM const index, used as: @to[NUM] in tigger exprs.
+  // @return [reg, NUM], used as: reg[NUM] in tigger exprs.
   // @caveat: will destroy both 2 tmp regs.
   const auto load_addr = [&] (ee_lval lv, tg_reg to, tg_reg tmp) {
     assert(lv.sym_idx);
-    int arrt = df.s2i(lv.sym), ret;
+    int arrt = df.s2i(lv.sym);
+    tg_reg ret_reg;
+    int ret_num;
     if(arrt == -1) {   // global var
       tgf.exprs.push_back(tg_expr_global_loadaddr{lv.sym.id, to});
+      ret_reg = to;
+    }
+    else if(!cstats[arrt].is_array) {  // pointer passed as parameter
+      assert(lv.sym.type == 'p');
+      ret_reg = load_val(lv.sym, to);
     }
     else {     // on stack
+      assert(lv.sym.type != 'p');
       assert(cstats[arrt].stackpos != -1);
       tgf.exprs.push_back(tg_expr_stack_loadaddr{cstats[arrt].stackpos, to});
+      ret_reg = to;
     }
     std::visit(overloaded{
         [&] (ee_symbol sym) {
           tg_expr_op add;
           add.op = OP_ADD; add.numop = 2;
           add.lval = to;
-          add.a = to;
+          add.a = ret_reg;
           add.b = load_val(sym, tmp);
           tgf.exprs.push_back(add);
-          ret = 0;
+          
+          ret_reg = to;
+          ret_num = 0;
         },
         [&] (int v) {
-          ret = v;
+          ret_num = v;
         }
       }, *lv.sym_idx);
-    return ret;
+    return std::make_pair(ret_reg, ret_num);
   };
 
-  // translate eeyore expressions one by one
+  // code generation
+
+  // store used s0--s11
   for(int i = 1; i <= 12; ++i) {
-    if(reg_used[i])
+    if(reg_to_color[i] != -1)
       tgf.exprs.push_back(tg_expr_stack_store{{i}, reg_stackpos[i]});
   }
-          
+
+  // store spilled params: a0--a7
+  for(int i = 0; i < tgf.num_params; ++i) {
+    save_val_from(ee_symbol{'p', i}, tg_reg{20 + i});
+  }
+
+  // translate expressions one by one
   for(int i = 0; i < df.n_exprs; ++i) {
     std::visit(overloaded{
         [&] (ee_expr_op e) {
           assert(!(std::get_if<int>(&e.a) && std::get_if<int>(&e.b)));
+          if(df.s2i(e.sym) != -1 && !expr_used[i]) return;
           
           // single operand, no optimization available
           if(e.numop == 1) {
@@ -429,35 +485,38 @@ tg_funcdef tigger_func_gen(const ee_funcdef &eef) {
         },
 
         [&] (ee_expr_assign e) {
+          
           if(e.lval.sym_idx) {
-            int num = load_addr(e.lval, tg_reg{13}, tg_reg{14});
+            auto [reg, num] = load_addr(e.lval, tg_reg{13}, tg_reg{14});
             tg_expr_assign_la as;
-            as.lreg = tg_reg{13};
+            as.lreg = reg;
             as.lidx = num;
             as.a = load_rval(e.a, tg_reg{14});
             tgf.exprs.push_back(as);
           }
           else {
-            tg_expr_assign_c as;
-            as.lval = save_val(e.lval.sym, tg_reg{13});
+            if(df.s2i(e.lval.sym) != -1 && !expr_used[i]) return;
             std::visit(overloaded{
                 [&] (ee_symbol sym) {
-                  as.a = load_val(sym, tg_reg{14});
+                  tg_reg t = load_val(sym, tg_reg{13});
+                  save_val_from(e.lval.sym, t);
                 },
                 [&] (int v) {
+                  tg_expr_assign_c as;
+                  as.lval = save_val(e.lval.sym, tg_reg{13});
                   as.a = v;
+                  tgf.exprs.push_back(as);
+                  save_val_apply(e.lval.sym, tg_reg{13});
                 }
               }, e.a);
-            tgf.exprs.push_back(as);
-            save_val_apply(e.lval.sym, tg_reg{13});
           }
         },
 
         [&] (ee_expr_assign_arr e) {
-          int num = load_addr(e.a, tg_reg{13}, tg_reg{14});
+          auto [reg, num] = load_addr(e.a, tg_reg{13}, tg_reg{14});
           tg_expr_assign_ra as;
           as.lval = save_val(e.sym, tg_reg{14});
-          as.areg = tg_reg{13};
+          as.areg = reg;
           as.aidx = num;
           tgf.exprs.push_back(as);
           save_val_apply(e.sym, tg_reg{14});
@@ -482,23 +541,65 @@ tg_funcdef tigger_func_gen(const ee_funcdef &eef) {
 
         [&] (const ee_expr_call &e) {
           // each active var in t2--t6, a0--a7
-          // after this call need to be saved and restored.
+          // after this call need to be saved and restored,
+          // except for the return value.
           bool nxt_inuse[max_colors + 5] = {};
+          int rett = e.store ? df.s2i(*e.store) : -1;
           if(i + 1 < df.n_exprs) for(int i: active_vars[i + 1]) {
-              if(cstats[i].color != -1)
+              if(i != rett && cstats[i].color != -1)
                 nxt_inuse[palette[cstats[i].color]] = true;
             }
-          // except for the return value if it is held just in a0.
-          int rett = e.store ? df.s2i(*e.store) : -1;
-          if(palette[cstats[rett].color] == 20) nxt_inuse[20] = false;
           // save
           for(int i = 15; i <= 27; ++i) if(nxt_inuse[i]) {
               tgf.exprs.push_back(tg_expr_stack_store{{i}, reg_stackpos[i]});
             }
+          
           // arrange params
+          // recursive, loop-breaking
+          assert(e.params.size() <= 8);
+          int storing_param[max_colors + 5] = {};
+          for(int i = 0; i < max_colors + 5; ++i) storing_param[i] = -1;
           for(int i = 0; i < (int)e.params.size(); ++i) {
-            load_rval_to(e.params[i], tg_reg{20 + i});
+            if(auto p = std::get_if<ee_symbol>(&e.params[i]); p) {
+              int t = df.s2i(*p);
+              if(t != -1 && cstats[t].color != -1) {
+                storing_param[palette[cstats[t].color]] = i;
+              }
+            }
           }
+          int status_onstack[10] = {};  // 1: on stack; 2: done
+          bool broke_cycle_here[10] = {};
+          const auto put_param = [&] (int i, auto &&put_param) {
+            status_onstack[i] = 1;
+            if(storing_param[20 + i] == i) {
+              status_onstack[i] = 2;
+              return;
+            }
+            int coinc = storing_param[20 + i];
+            if(coinc != -1 && status_onstack[coinc] == 0) {
+              put_param(coinc, put_param);
+            }
+            if(coinc != -1 && status_onstack[coinc] == 1) {
+              // break cycle.
+              tgf.exprs.push_back(
+                tg_expr_assign_c{tg_reg{13}, tg_reg{20 + i}});
+              broke_cycle_here[coinc] = true;   // sentry for coinc
+              coinc = -1;
+            }
+            assert(coinc == -1 || status_onstack[coinc] == 2);
+            if(broke_cycle_here[i]) {
+              tgf.exprs.push_back(
+                tg_expr_assign_c{tg_reg{20 + i}, tg_reg{13}});
+            }
+            else {
+              load_rval_to(e.params[i], tg_reg{20 + i});
+            }
+            status_onstack[i] = 2;
+          };
+          for(int i = 0; i < (int)e.params.size(); ++i) {
+            if(!status_onstack[i]) put_param(i, put_param);
+          }
+          
           // call and save return value
           tgf.exprs.push_back(tg_expr_call{e.func});
           if(e.store) {
@@ -517,7 +618,7 @@ tg_funcdef tigger_func_gen(const ee_funcdef &eef) {
           }
           // restore s0--s11
           for(int i = 1; i <= 12; ++i) {
-            if(reg_used[i])
+            if(reg_to_color[i] != -1)
               tgf.exprs.push_back(tg_expr_stack_load{reg_stackpos[i], {i}});
           }
           // give out control
@@ -530,14 +631,16 @@ tg_funcdef tigger_func_gen(const ee_funcdef &eef) {
 
 std::shared_ptr<tg_program> tigger_gen(std::shared_ptr<ee_program> eeprog) {
   std::shared_ptr<tg_program> ret = std::make_shared<tg_program>();
+  std::unordered_map<int, std::optional<int>> global_decl_map;
   // decl
   for(const auto &decl: eeprog->decls) {
     assert(decl.sym.type == 'T');
     ret->decls.push_back(tg_global_decl{decl.sym.id, decl.size});
+    global_decl_map[decl.sym.id] = decl.size;
   }
   // funcdefs
   for(const auto &funcdef: eeprog->funcdefs) {
-    ret->funcdefs.push_back(tigger_func_gen(funcdef));
+    ret->funcdefs.push_back(tigger_func_gen(funcdef, global_decl_map));
   }
   return ret;
 }

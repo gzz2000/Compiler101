@@ -17,14 +17,14 @@ DEFOUT(const ee_symbol &sym) {
 }
 
 DEFOUT(const ee_decl &decl) {
-  if(decl.size) out << "var " << 4 * *decl.size << " " << decl.sym << endl;
-  else out << "var " << decl.sym << endl;
+  if(decl.size) out << "  var " << 4 * *decl.size << " " << decl.sym << endl;
+  else out << "  var " << decl.sym << endl;
   return out;
 }
 
 DEFOUT(const std::vector<ee_decl> &decls) {
   for(const ee_decl &decl: decls) {
-    out << "  " << decl;
+    out << decl;
   }
   return out;
 }
@@ -45,32 +45,32 @@ DEFOUT(const ee_lval &lv) {
 
 DEFOUT(const ee_expr_op &op) {
   if(op.numop == 1) {
-    if(op.op == OP_ADD) out << op.sym << " = " << op.b << endl;
-    else out << op.sym << " = " << opname2str(op.op) << op.a << endl;
+    if(op.op == OP_ADD) out << "  " << op.sym << " = " << op.b << endl;
+    else out << "  " << op.sym << " = " << opname2str(op.op) << op.a << endl;
   }
   else {
-    out << op.sym << " = " << op.a << " " << opname2str(op.op) << " " << op.b << endl;
+    out << "  " << op.sym << " = " << op.a << " " << opname2str(op.op) << " " << op.b << endl;
   }
   return out;
 }
 
 DEFOUT(const ee_expr_assign &a) {
-  out << a.lval << " = " << a.a << endl;
+  out << "  " << a.lval << " = " << a.a << endl;
   return out;
 }
 
 DEFOUT(const ee_expr_assign_arr &a) {
-  out << a.sym << " = " << a.a << endl;
+  out << "  " << a.sym << " = " << a.a << endl;
   return out;
 }
 
 DEFOUT(const ee_expr_cond_goto &cgo) {
-  out << "if " << cgo.a << " " << opname2str(cgo.lop) << " " << cgo.b << " goto l" << cgo.label_id << endl;
+  out << "  if " << cgo.a << " " << opname2str(cgo.lop) << " " << cgo.b << " goto l" << cgo.label_id << endl;
   return out;
 }
 
 DEFOUT(const ee_expr_goto &go) {
-  out << "goto l" << go.label_id << endl;
+  out << "  goto l" << go.label_id << endl;
   return out;
 }
 
@@ -81,16 +81,17 @@ DEFOUT(const ee_expr_label &lbl) {
 
 DEFOUT(const ee_expr_call &call) {
   for(const ee_rval &rv: call.params) {
-    out << "param " << rv << endl;
+    out << "  param " << rv << endl;
   }
-  if(call.store) out << *call.store << " = ";
-  out << "call f_" << call.func << endl;
+  if(call.store) out << "  " << *call.store << " = call f_";
+  else out << "  call f_";
+  out << call.func << endl;
   return out;
 }
 
 DEFOUT(const ee_expr_ret &ret) {
-  if(ret.val) out << "return " << *ret.val << endl;
-  else out << "return" << endl;
+  if(ret.val) out << "  return " << *ret.val << endl;
+  else out << "  return" << endl;
   return out;
 }
 
@@ -99,13 +100,9 @@ DEFOUT(const ee_funcdef &fdef) {
   out << fdef.decls;
   out << endl;
   for(const ee_expr_types &expr: fdef.exprs) {
-    std::visit(overloaded{
-        [&] (const ee_expr_label &lbl) {
-          out << lbl;
-        },
-        [&] (const auto &expr_t) {
-          out << "  " << expr_t;
-        }
+    std::visit(
+      [&] (const auto &expr_t) {
+        out << expr_t;
       }, expr);
   }
   out << "end f_" << fdef.name << endl;

@@ -512,7 +512,7 @@ inline void process_initlist(int *dims, int sz_dims,
     init.content);
 }
 
-template<char def_type_c>
+template<char def_type_c, bool global>
 inline void push_def(layered_store<g_def> &defs,
                      std::shared_ptr<ast_def> cdef,
                      std::vector<ee_expr_types> &out_assigns,
@@ -545,10 +545,48 @@ inline void push_def(layered_store<g_def> &defs,
       process_initlist(d.dims.data(), d.dims.size(), *cdef->init, store.data());
       auto constdef = dcast<ast_constdef>(cdef);
       if(constdef) d.vals.emplace(size);
+      const auto genzeroseq = [&] (int l, int r) {
+        // generate a small loop to fill zeros
+        // caveat: not SSA
+        ee_symbol i = out_decls.next<'t'>();
+        int lbl_st = ++global_label_id;
+        ee_expr_assign ea_i0;
+        ea_i0.lval.sym = i;
+        ea_i0.a = l * 4;
+        out_assigns.push_back(ea_i0);
+        out_assigns.push_back(ee_expr_label(lbl_st));
+        ee_expr_assign ea_zero;
+        ea_zero.lval.sym = d.sym;
+        ea_zero.lval.sym_idx = i;
+        ea_zero.a = 0;
+        out_assigns.push_back(ea_zero);
+        ee_expr_op ea_ipp;
+        ea_ipp.sym = i;
+        ea_ipp.a = i;
+        ea_ipp.b = 4;
+        ea_ipp.op = OP_ADD;
+        ea_ipp.numop = 2;
+        out_assigns.push_back(ea_ipp);
+        ee_expr_cond_goto ea_back;
+        ea_back.a = i;
+        ea_back.b = r * 4;
+        ea_back.lop = OP_LT;
+        ea_back.label_id = lbl_st;
+        out_assigns.push_back(ea_back);
+      };
       for(int i = 0; i < size; ++i) {
         ee_rval r;
         if(store[i]) r = eval_exp(*store[i], defs, out_assigns, out_decls);
-        else r = 0;
+        else {
+          int j = i + 1;
+          while(j < size && !store[j]) ++j;
+          if(j - i > 3) {
+            if constexpr (!global) genzeroseq(i, j);
+            i = j - 1;
+            continue;
+          }
+          r = 0;
+        }
         if(constdef) {
           std::visit(overloaded{
               [&] (int v) {
@@ -671,7 +709,7 @@ void eeyore_gen_block(ast_block &block,
   layered_store<g_def> defs(&last_defs);
   for(auto bi: block.items) {
     if(auto it = dcast<ast_def>(bi); it) {
-      push_def<'T'>(defs, it, exprs, declman);
+      push_def<'T', false>(defs, it, exprs, declman);
     }
     else {
       eeyore_gen_stmt(dcast<ast_stmt>(bi), declman, defs, exprs,
@@ -687,7 +725,7 @@ std::shared_ptr<ee_program> eeyore_gen(std::shared_ptr<ast_compunit> sysy) {
   decl_symbol_manager declman(ret->decls);
   std::vector<ee_expr_types> t_definits;
   for(auto def: sysy->defs) {
-    push_def<'T'>(defs, def, t_definits, declman);
+    push_def<'T', true>(defs, def, t_definits, declman);
   }
   
   ret->funcdefs.reserve(sysy->funcdefs.size());
@@ -700,7 +738,7 @@ std::shared_ptr<ee_program> eeyore_gen(std::shared_ptr<ast_compunit> sysy) {
     layered_store<g_def> defs_with_params(&defs);
     
     for(int i = 0; i < ee_f.num_params; ++i) {
-      push_def<'p'>(defs_with_params, sysy_fdef->params[i], ee_f.exprs, func_declman);
+      push_def<'p', false>(defs_with_params, sysy_fdef->params[i], ee_f.exprs, func_declman);
     }
     if(sysy_fdef->name == "main") {
       ee_f.exprs = std::move(t_definits);

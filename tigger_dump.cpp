@@ -41,7 +41,7 @@ DEFOUT(tg_expr_assign_ra) {
 }
 
 DEFOUT(tg_expr_cond_goto) {
-  return out << "if " << t.a << " " << opname2str(t.lop) << " " << t.b << "goto l" << t.label_id << endl;
+  return out << "if " << t.a << " " << opname2str(t.lop) << " " << t.b << " goto l" << t.label_id << endl;
 }
 
 DEFOUT(tg_expr_goto) {
