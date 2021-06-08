@@ -111,7 +111,7 @@ typedef std::variant<
 
 struct tg_funcdef {
   std::string name;
-  int num_params, size_stack;
+  int num_params, size_stack = 0;
   std::vector<tg_expr_types> exprs;
 };
 
