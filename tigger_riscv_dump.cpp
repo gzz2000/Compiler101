@@ -307,7 +307,7 @@ DEFOUT(tg_funcdef) {
           }
           else {
             out << "  li t0, " << STK << endl
-                << "  add sp, sp, s0" << endl
+                << "  add sp, sp, t0" << endl
                 << "  lw ra, -4(sp)" << endl
                 << "  ret" << endl;
           }
