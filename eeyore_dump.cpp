@@ -80,6 +80,7 @@ DEFOUT(const ee_expr_label &lbl) {
 }
 
 DEFOUT(const ee_expr_call &call) {
+  if(call.func == "starttime" || call.func == "stoptime") return out;
   for(const ee_rval &rv: call.params) {
     out << "  param " << rv << endl;
   }

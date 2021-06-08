@@ -2,7 +2,7 @@
 
 # @brief Batch test suite.
 
-cases=`ls ./open-test-cases/sysy/section1/functional_test/*.sy`
+cases=`ls ./local/performance/*.sy`
 badcases="92_matrix_add 93_matrix_sub 94_matrix_mul 95_matrix_tran 96_many_param_call 97_many_global_var"
 
 function isbadcase {
@@ -33,20 +33,20 @@ for c in $cases; do
     echo $c
     
     # dump eeyore for easy debugging
-    mon "debug compiler RE" ./build/zcc -S -e $c -o local/output.eeyore
+    mon "debug compiler RE" ./build/zcc -S -e $c -o local/minivm/output.eeyore
     
-    mon "compiler RE" ./build/zcc -S -t $c -o local/output.tigger
+    mon "compiler RE" ./build/zcc -S -t $c -o local/minivm/output.tigger
     input="${c%.sy}.in"
     if [ -f $input ]; then
         echo $input
     else
         input=/dev/null
     fi
-    ./minivm/build/minivm -t local/output.tigger < $input > local/output.out
+    ./minivm/build/minivm -t local/minivm/output.tigger < $input > local/minivm/output.out
     ret=$?
     #sed -i -e '$ s/\n*$/\n/g' output.out
     #sed -i -e '$ s/^\n\n$/\n/g' output.out
-    echo >> local/output.out
-    echo $ret >> local/output.out
+    echo >> local/minivm/output.out
+    echo $ret >> local/minivm/output.out
     mon "program WA" diff -B --ignore-all-space local/output.out "${c%.sy}.out"
 done

@@ -55,6 +55,7 @@ DEFOUT(tg_expr_label) {
 }
 
 DEFOUT(tg_expr_call) {
+  if(t.func == "starttime" || t.func == "stoptime") return out;
   return out << "call f_" << t.func << endl;
 }
 
