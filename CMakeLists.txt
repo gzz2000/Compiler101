@@ -33,4 +33,5 @@ add_executable(zcc
   main.cpp
   eeyore_gen.cpp eeyore_dump.cpp
   eeyore_analysis.cpp
-  tigger_gen.cpp tigger_dump.cpp)
+  tigger_gen.cpp tigger_dump.cpp
+  tigger_riscv_dump.cpp)

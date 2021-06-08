@@ -10,7 +10,7 @@
 using std::endl;
 
 #define DEFOUT(tigger_type) \
-  inline std::ostream &operator << (std::ostream &out, const tigger_type &t)
+  inline static std::ostream &operator << (std::ostream &out, const tigger_type &t)
 
 DEFOUT(tg_reg) {
   return out << reglist[t.id];
