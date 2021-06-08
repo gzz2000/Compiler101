@@ -7,6 +7,10 @@
 #include <variant>
 #include <iostream>
 
+using std::endl;
+
+namespace tigger_riscv_dump {
+
 __attribute__((noreturn))
 void rverror_print(const char *str, int lineno) {
   printf("RISC-V generation error: %s\n", str);
@@ -14,8 +18,6 @@ void rverror_print(const char *str, int lineno) {
 }
 
 #define rverror(str) rverror_print(str, __LINE__)
-
-using std::endl;
 
 #define DEFOUT(tigger_type) \
   inline static std::ostream &operator << (std::ostream &out, const tigger_type &t)
@@ -346,6 +348,9 @@ DEFOUT(tg_program) {
   return out;
 }
 
+}
+
 void dump_riscv(std::shared_ptr<tg_program> tgprog, std::ostream &out) {
+  using namespace tigger_riscv_dump;
   out << *tgprog;
 }

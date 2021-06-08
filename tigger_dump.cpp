@@ -9,6 +9,8 @@
 
 using std::endl;
 
+namespace tigger_dump {
+
 #define DEFOUT(tigger_type) \
   inline static std::ostream &operator << (std::ostream &out, const tigger_type &t)
 
@@ -112,6 +114,9 @@ DEFOUT(tg_program) {
   return out;
 }
 
+}
+
 void dump_tigger(std::shared_ptr<tg_program> tgprog, std::ostream &out) {
+  using namespace tigger_dump;
   out << *tgprog;
 }
