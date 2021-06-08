@@ -188,7 +188,9 @@ VarDef
 ;
 
 InitValOptional
-: {}
+: {
+  $$ = nullptr;
+}
 | OP_ASSIGN InitVal {
   $$ = std::move($2);
  }
@@ -352,7 +354,9 @@ OpenStmt
 ;
 
 Stmt
-: OP_SEMICOLON {}
+: OP_SEMICOLON {
+  $$ = nullptr;
+ }
 | LVal OP_ASSIGN Exp OP_SEMICOLON {
   $$ = make_shared<ast_stmt_assign>(
     dcast<ast_lval>($1),
