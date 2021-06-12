@@ -8,6 +8,7 @@ extern std::shared_ptr<ast_compunit> read_source_ast(const char *fname);
 
 extern std::shared_ptr<ee_program> eeyore_gen(std::shared_ptr<ast_compunit> sysy);
 extern void dump_eeyore(std::shared_ptr<ee_program> eeprog, std::ostream &out);
+std::shared_ptr<ee_program> eeyore_optim_commonexp(std::shared_ptr<ee_program> oldeeprog);
 extern std::shared_ptr<tg_program> tigger_gen(std::shared_ptr<ee_program> eeprog);
 extern void dump_tigger(std::shared_ptr<tg_program> tgprog, std::ostream &out);
 extern void dump_riscv(std::shared_ptr<tg_program> tgprog, std::ostream &out);
@@ -56,6 +57,10 @@ int main(int argc, char **argv) {
   std::ofstream fout(output);
   std::shared_ptr<ast_compunit> sysy = read_source_ast(input);
   std::shared_ptr<ee_program> eeyore = eeyore_gen(sysy);
+  
+  // optimization
+  eeyore = eeyore_optim_commonexp(eeyore);
+  
   if(mode == 0) { // eeyore
     dump_eeyore(eeyore, fout);
     return 0;

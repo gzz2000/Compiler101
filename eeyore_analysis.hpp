@@ -12,6 +12,9 @@ struct ee_dataflow {
   std::vector<std::vector<int>> e_in, e_out;
   std::vector<int> loopcnt;
 
+  std::vector<int> idom;
+  std::vector<std::vector<int>> doms;
+
   // per symbol
   int n_decls;
   std::unordered_map<ee_symbol, int> sym2id;
@@ -21,7 +24,11 @@ struct ee_dataflow {
     else return -1;
   }
 
+  // initialization
   ee_dataflow(const ee_funcdef &eef);
+
+  // compute dominator tree
+  void compute_dominator_tree();
   
   // BFS on the reverse graph.
   // bool foo(int): returns true if the bfs should stop here.

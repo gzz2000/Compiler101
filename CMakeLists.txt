@@ -32,6 +32,6 @@ add_executable(zcc
   ${BISON_sysy_parser_OUTPUTS} ${FLEX_sysy_lexer_OUTPUTS} sysy_bridge.cpp
   main.cpp
   eeyore_gen.cpp eeyore_dump.cpp
-  eeyore_analysis.cpp
+  eeyore_analysis.cpp ea_dominator_tree.cpp eeyore_optim_commonexp.cpp
   tigger_gen.cpp tigger_dump.cpp
   tigger_riscv_dump.cpp)

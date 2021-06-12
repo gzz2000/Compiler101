@@ -2,7 +2,7 @@
 
 # @brief Batch test suite.
 
-cases=`ls ./local/performance/*.sy`
+cases=`ls ./local/functional/*.sy`
 badcases="92_matrix_add 93_matrix_sub 94_matrix_mul 95_matrix_tran 96_many_param_call 97_many_global_var"
 
 function isbadcase {
@@ -48,5 +48,5 @@ for c in $cases; do
     #sed -i -e '$ s/^\n\n$/\n/g' output.out
     echo >> local/minivm/output.out
     echo $ret >> local/minivm/output.out
-    mon "program WA" diff -B --ignore-all-space local/output.out "${c%.sy}.out"
+    mon "program WA" diff -B --ignore-all-space local/minivm/output.out "${c%.sy}.out"
 done

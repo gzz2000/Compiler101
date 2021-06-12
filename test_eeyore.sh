@@ -2,7 +2,7 @@
 
 # @brief Batch test suite.
 
-cases=`ls ./local/performance/*.sy`
+cases=`ls ./local/functional/*.sy`
 
 function mon {
     # usage: mon <error info> <command..>

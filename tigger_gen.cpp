@@ -1,3 +1,8 @@
+/**
+ * @author Zizheng Guo
+ * This implements global register allocation based on graph coloring.
+ */
+
 #include "tigger.hpp"
 #include "sysy.hpp"
 #include "sysy.tab.hpp"

@@ -20,6 +20,10 @@ inline bool operator == (ee_symbol a, ee_symbol b) {
   return a.type == b.type && a.id == b.id;
 }
 
+inline bool operator != (ee_symbol a, ee_symbol b) {
+  return a.type != b.type || a.id != b.id;
+}
+
 namespace std {
 template <>
 struct hash<ee_symbol> {
