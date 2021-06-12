@@ -46,8 +46,6 @@ ee_funcdef eefuncdef_commonexp(const ee_funcdef &oldef) {
   ee_dataflow df(nwdef);
   df.compute_dominator_tree();
   
-  return nwdef;
-  
   const auto get_eval_save = [&] (const ee_expr_types &et) {
     std::optional<ee_symbol> sym;
     std::visit(overloaded{

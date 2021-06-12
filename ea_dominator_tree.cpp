@@ -26,7 +26,6 @@ void ee_dataflow::compute_dominator_tree() {
   };
   fa[0] = -1;
   dfs_dfn(0, dfs_dfn);
-  for(int i = 1; i < n_exprs; ++i) if(dfn[i] == -1) exit(66);
 
   // compute semi dominator
   for(int i = 0; i < n_exprs; ++i) {
@@ -53,9 +52,10 @@ void ee_dataflow::compute_dominator_tree() {
     }
   };
   
-  for(int i = n_exprs - 1; i >= 1; --i) {
+  for(int i = ndfn - 1; i >= 1; --i) {
     int w = seq[i];
     for(int v: e_in[w]) {
+      if(dfn[v] == -1) continue;
       int u = eval(v);
       if(dfn[semi[u]] < dfn[semi[w]]) semi[w] = semi[u];
     }
@@ -70,12 +70,13 @@ void ee_dataflow::compute_dominator_tree() {
 
   // finalize immediate dominator
   idom[0] = -1;
-  for(int i = 1; i < n_exprs; ++i) {
+  for(int i = 1; i < ndfn; ++i) {
     int w = seq[i];
     if(idom[w] != semi[w]) idom[w] = idom[idom[w]];
   }
   doms.resize(n_exprs);
   for(int i = 1; i < n_exprs; ++i) {
-    doms[idom[i]].push_back(i);
+    if(dfn[i] == -1) idom[i] = -1;
+    else doms[idom[i]].push_back(i);
   }
 }
