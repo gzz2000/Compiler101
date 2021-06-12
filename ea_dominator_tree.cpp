@@ -7,6 +7,7 @@
 #include "eeyore_analysis.hpp"
 #include <vector>
 #include <algorithm>
+#include <cassert>
 
 void ee_dataflow::compute_dominator_tree() {
   int ndfn = 0;
