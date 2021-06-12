@@ -86,6 +86,8 @@ ee_funcdef eefuncdef_commonexp(const ee_funcdef &oldef) {
   persistent_umap<std::tuple<int, ee_rval, ee_rval>, int> idom_ops;
 
   const auto copy_prop_sym = [&] (int i, ee_symbol &sym) {
+    return;
+    
     std::optional<int> jp = idom_evals.find(sym);
     if(!jp) return;
     int j = *jp;
