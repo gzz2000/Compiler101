@@ -52,6 +52,8 @@ void ee_dataflow::compute_dominator_tree() {
       return upset_minsemi[v];
     }
   };
+
+  return;
   
   for(int i = n_exprs - 1; i >= 1; --i) {
     int w = seq[i];
