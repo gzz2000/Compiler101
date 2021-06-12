@@ -26,7 +26,7 @@ void ee_dataflow::compute_dominator_tree() {
   };
   fa[0] = -1;
   dfs_dfn(0, dfs_dfn);
-  for(int i = 1; i < n_exprs; ++i) assert(dfn[i] != -1);
+  for(int i = 1; i < n_exprs; ++i) if(dfn[i] != -1) exit(66);
 
   // compute semi dominator
   for(int i = 0; i < n_exprs; ++i) {
@@ -52,8 +52,6 @@ void ee_dataflow::compute_dominator_tree() {
       return upset_minsemi[v];
     }
   };
-
-  return;
   
   for(int i = n_exprs - 1; i >= 1; --i) {
     int w = seq[i];
