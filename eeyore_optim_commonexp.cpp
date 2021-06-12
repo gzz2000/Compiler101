@@ -46,6 +46,8 @@ ee_funcdef eefuncdef_commonexp(const ee_funcdef &oldef) {
   ee_dataflow df(nwdef);
   df.compute_dominator_tree();
   
+  return nwdef;
+  
   const auto get_eval_save = [&] (const ee_expr_types &et) {
     std::optional<ee_symbol> sym;
     std::visit(overloaded{
@@ -86,8 +88,6 @@ ee_funcdef eefuncdef_commonexp(const ee_funcdef &oldef) {
   persistent_umap<std::tuple<int, ee_rval, ee_rval>, int> idom_ops;
 
   const auto copy_prop_sym = [&] (int i, ee_symbol &sym) {
-    return;
-    
     std::optional<int> jp = idom_evals.find(sym);
     if(!jp) return;
     int j = *jp;
