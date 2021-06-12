@@ -73,7 +73,7 @@ ee_funcdef eefuncdef_commonexp(const ee_funcdef &oldef) {
       if(u == ed) return true;
       if(visited.count(u)) return true;
       visited.insert(u);
-      if(!f_is_valid(u)) {
+      if(u != st && !f_is_valid(u)) {
         clean = false;
         return true;
       }
@@ -117,8 +117,30 @@ ee_funcdef eefuncdef_commonexp(const ee_funcdef &oldef) {
         [&] (ee_expr_op &e) {
           copy_prop(u, e.a);
           copy_prop(u, e.b);
-          // todo: common expression elimination
-          idom_evals.set(e.sym, u);
+
+          // common subexpression elimination
+          std::tuple<int, ee_rval, ee_rval> sign(e.op * 4 + e.numop, e.a, e.b);
+          std::optional<int> lastc = idom_ops.find(sign);
+          if(lastc && bfs_backward_check(u, *lastc, [&] (int k) {
+            std::optional<ee_symbol> s2 = get_eval_save(nwdef.exprs[k]);
+            const auto chkeq = [] (ee_symbol sym, ee_rval a) {
+              auto p = std::get_if<ee_symbol>(&a);
+              return p && *p == sym;
+            };
+            if(s2 && (*s2 == e.sym || chkeq(*s2, e.a) || chkeq(*s2, e.b))) return false; // polluted.
+            return true;
+          }))
+          {
+            ee_expr_assign ea;
+            ea.lval.sym = e.sym;
+            ea.a = std::get<ee_expr_op>(nwdef.exprs[*lastc]).sym;
+            nwdef.exprs[u] = ea;   // after this, (&) e becomes invalid.
+            idom_evals.set(ea.lval.sym, u);
+          }
+          else {
+            idom_evals.set(e.sym, u);
+            idom_ops.set(sign, u);
+          }
         },
         [&] (ee_expr_assign &e) {
           if(e.lval.sym_idx) copy_prop(u, e.lval.sym);
