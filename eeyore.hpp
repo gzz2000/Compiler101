@@ -53,6 +53,20 @@ struct ee_lval {
   std::optional<ee_rval> sym_idx;
 };
 
+inline bool operator == (ee_lval a, ee_lval b) {
+  return a.sym == b.sym && a.sym_idx == b.sym_idx;
+}
+
+namespace std {
+template <>
+struct hash<ee_lval> {
+  hash<std::tuple<ee_symbol, std::optional<ee_rval>>> h0;
+  inline std::size_t operator () (ee_lval lv) const {
+    return h0(std::make_tuple(lv.sym, lv.sym_idx));
+  }
+};
+}
+
 struct ee_expr_assign: ee_expr {
   ee_lval lval;
   ee_rval a;

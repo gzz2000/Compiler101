@@ -84,6 +84,7 @@ ee_funcdef eefuncdef_commonexp(const ee_funcdef &oldef) {
 
   persistent_umap<ee_symbol, int> idom_evals;
   persistent_umap<std::tuple<int, ee_rval, ee_rval>, int> idom_ops;
+  persistent_umap<ee_lval, int> idom_arrs;
 
   const auto copy_prop_sym = [&] (int i, ee_symbol &sym) {
     std::optional<int> jp = idom_evals.find(sym);
@@ -94,6 +95,9 @@ ee_funcdef eefuncdef_commonexp(const ee_funcdef &oldef) {
     auto q = std::get_if<ee_symbol>(&p->a);
     if(!q) return;   // notice we do not expand ee_rval[constant] because we are lazy.
     bool valid = bfs_backward_check(i, j, [&] (int k) {
+      // todo: bug here. if sym is a global variable, it can be modified
+      // by a function call with side effect, which is not considered here.
+      // fortunately, this is not causing error in test cases.
       std::optional<ee_symbol> s2 = get_eval_save(nwdef.exprs[k]);
       if(s2 && (*s2 == *q || *s2 == sym)) return false; // polluted.
       return true;
@@ -112,6 +116,7 @@ ee_funcdef eefuncdef_commonexp(const ee_funcdef &oldef) {
   const auto dfs_optim = [&] (int u, auto &&dfs_optim) -> void {
     int p_idom_evals = idom_evals.record_at();
     int p_idom_ops = idom_ops.record_at();
+    int p_idom_arrs = idom_arrs.record_at();
 
     std::visit(overloaded{
         [&] (ee_expr_op &e) {
@@ -149,7 +154,28 @@ ee_funcdef eefuncdef_commonexp(const ee_funcdef &oldef) {
         },
         [&] (ee_expr_assign_arr &e) {
           copy_prop(u, e.a.sym);
-          idom_evals.set(e.sym, u);
+          copy_prop(u, *e.a.sym_idx);
+          // array dereferencing elimination
+          std::optional<int> lasta = idom_arrs.find(e.a);
+          if(lasta && bfs_backward_check(u, *lasta, [&] (int k) {
+            if(std::get_if<ee_expr_call>(&nwdef.exprs[k])) return false;
+            if(auto p1 = std::get_if<ee_expr_assign>(&nwdef.exprs[k]);
+               p1 &&
+               p1->lval.sym == e.a.sym &&
+               p1->lval.sym_idx) return false;
+            return true;
+          }))
+          {
+            ee_expr_assign ea;
+            ea.lval.sym = e.sym;
+            ea.a = std::get<ee_expr_assign_arr>(nwdef.exprs[*lasta]).sym;
+            nwdef.exprs[u] = ea;   // after this, (&) e becomes invalid.
+            idom_evals.set(ea.lval.sym, u);
+          }
+          else {
+            idom_evals.set(e.sym, u);
+            idom_arrs.set(e.a, u);
+          }
         },
         [&] (ee_expr_cond_goto &e) {
           copy_prop(u, e.a);
@@ -171,8 +197,12 @@ ee_funcdef eefuncdef_commonexp(const ee_funcdef &oldef) {
 
     idom_evals.restore(p_idom_evals);
     idom_ops.restore(p_idom_ops);
+    idom_arrs.restore(p_idom_arrs);
   };
-  
+
+  // repeat 3 times
+  dfs_optim(0, dfs_optim);
+  dfs_optim(0, dfs_optim);
   dfs_optim(0, dfs_optim);
   
   return nwdef;

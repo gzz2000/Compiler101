@@ -25,6 +25,7 @@ ee_dataflow::ee_dataflow(const ee_funcdef &eef)
       e_in[label2pos[c->label_id]].push_back(i);
       e_out[i].push_back(label2pos[c->label_id]);
     }
+    if(std::get_if<ee_expr_ret>(&eef.exprs[i])) continue;
     if(i + 1 < (int)eef.exprs.size()) {
       e_in[i + 1].push_back(i);
       e_out[i].push_back(i + 1);
